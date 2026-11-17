@@ -10,334 +10,25 @@ const COLLECTIONS = {
     smsLogs: 'af_p2_smsLogs'
 };
 
-let _cdnBridgePromise = null;
-
-async function bootstrapCdnFirebaseStore() {
-    if (window.FirebaseStore) return window.FirebaseStore;
-    if (_cdnBridgePromise) return _cdnBridgePromise;
-
-    _cdnBridgePromise = (async () => {
-        try {
-            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            const cfgTimer = controller ? setTimeout(() => controller.abort(), 3000) : null;
-            const cfgRes = await fetch('./firebase-applet-config.json', controller ? { signal: controller.signal } : undefined);
-            if (cfgTimer) clearTimeout(cfgTimer);
-            if (!cfgRes.ok) return null;
-            const firebaseConfig = await cfgRes.json();
-
-            const sdkLoad = Promise.all([
-                import(/* @vite-ignore */ 'https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js'),
-                import(/* @vite-ignore */ 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js')
-            ]);
-            const [appMod, fsMod] = await Promise.race([
-                sdkLoad,
-                new Promise((_, reject) => setTimeout(() => reject(new Error('CDN timeout')), 4500))
-            ]);
-
-            const app = appMod.initializeApp(firebaseConfig);
-            const db = fsMod.getFirestore(app, firebaseConfig.firestoreDatabaseId);
-            const toDocId = (u) => (String(u || '').trim().replace(/[^a-zA-Z0-9_.-]/g, '_') || `user_${Date.now()}`).slice(0, 120);
-            const safeId = (p) => `${p}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-            const cdnOtps = new Map();
-            let activeTargetMobile = '';
-
-            const findUser = async (identifier) => {
-                const cleanId = String(identifier || '').trim();
-                if (!cleanId) return null;
-                try {
-                    const directSnap = await fsMod.getDoc(fsMod.doc(db, COLLECTIONS.users, toDocId(cleanId)));
-                    if (directSnap.exists()) return directSnap.data();
-                } catch {}
-                try {
-                    const q1 = fsMod.query(fsMod.collection(db, COLLECTIONS.users), fsMod.where('username', '==', cleanId), fsMod.limit(1));
-                    const s1 = await fsMod.getDocs(q1);
-                    if (!s1.empty) return s1.docs[0].data();
-                } catch {}
-                const digits = cleanId.replace(/\D/g, '').slice(-10);
-                if (digits.length === 10) {
-                    try {
-                        const q2 = fsMod.query(fsMod.collection(db, COLLECTIONS.users), fsMod.where('mobile', '==', digits), fsMod.limit(1));
-                        const s2 = await fsMod.getDocs(q2);
-                        if (!s2.empty) return s2.docs[0].data();
-                    } catch {}
-                }
-                return null;
-            };
-
-            const writeAct = async (username, actionType, details, category = 'general', status = 'success', mobileOverride = '') => {
-                if (!username || username === 'demo') return null;
-                const id = safeId('ACT');
-                const entry = {
-                    id,
-                    username: String(username).slice(0, 64),
-                    mobile: String(mobileOverride || '').slice(0, 20),
-                    actionType: String(actionType).slice(0, 48),
-                    category: String(category).slice(0, 48),
-                    details: String(details || '').slice(0, 490),
-                    status: String(status || 'success').slice(0, 32),
-                    timestamp: new Date().toISOString()
-                };
-                try {
-                    await fsMod.setDoc(fsMod.doc(db, COLLECTIONS.activityLogs, id), entry);
-                } catch {}
-                return entry;
-            };
-
-            const store = {
-                async sendRealMobileOtp(mobile) {
-                    const cleanMobile = String(mobile || '').replace(/\D/g, '').slice(-10);
-                    if (!/^[6-9]\d{9}$/.test(cleanMobile)) {
-                        return { success: false, message: 'Please enter a valid 10-digit Indian mobile number (starting 6-9)!' };
-                    }
-                    try {
-                        const qMob = fsMod.query(fsMod.collection(db, COLLECTIONS.users), fsMod.where('mobile', '==', cleanMobile), fsMod.limit(1));
-                        const snap = await Promise.race([
-                            fsMod.getDocs(qMob),
-                            new Promise((resolve) => setTimeout(() => resolve(null), 2200))
-                        ]);
-                        if (snap && !snap.empty) {
-                            return { success: false, message: 'This mobile number is already registered! Please login instead.' };
-                        }
-                    } catch {}
-                    activeTargetMobile = cleanMobile;
-                    const code = String(Math.floor(100000 + Math.random() * 900000));
-                    cdnOtps.set(cleanMobile, { code, expiresAt: Date.now() + 10 * 60 * 1000, attempts: 0 });
-                    return { success: true, provider: 'free-otp', mobile: cleanMobile, otpCode: code, message: `Verification OTP generated for +91 ${cleanMobile}` };
-                },
-                async verifyRealMobileOtp(otpCode, mobile) {
-                    const cleanMobile = String(mobile || '').replace(/\D/g, '').slice(-10);
-                    const cleanCode = String(otpCode || '').trim();
-                    if (!/^\d{6}$/.test(cleanCode)) return { success: false, message: 'Please enter a valid 6-digit OTP code.' };
-                    if (activeTargetMobile && activeTargetMobile !== cleanMobile) {
-                        return { success: false, message: 'Mobile number changed. Please click Get OTP again.' };
-                    }
-                    const rec = cdnOtps.get(cleanMobile);
-                    if (!rec) return { success: false, message: 'OTP expired or not found. Please click Get OTP again.' };
-                    if (Date.now() > rec.expiresAt) { cdnOtps.delete(cleanMobile); return { success: false, message: 'OTP has expired! Please request a new one.' }; }
-                    rec.attempts += 1;
-                    if (rec.attempts > 5) { cdnOtps.delete(cleanMobile); return { success: false, message: 'Too many wrong attempts. Please request a new OTP.' }; }
-                    if (rec.code !== cleanCode) return { success: false, message: 'Incorrect OTP code entered.' };
-                    cdnOtps.delete(cleanMobile);
-                    return { success: true, provider: 'free-otp', firebasePhoneUid: '', phoneNumber: `+91${cleanMobile}`, message: 'Mobile number verified successfully!' };
-                },
-                async registerUser(payload) {
-                    const uname = String(payload.username || '').trim();
-                    const pwd = String(payload.password || '').trim();
-                    const cleanMobile = String(payload.mobile || '').replace(/\D/g, '').slice(-10);
-                    if (!uname || uname.length < 3 || !pwd || pwd.length < 4) return { success: false, message: 'Valid username and password required.' };
-                    const docId = toDocId(uname);
-                    const existing = await findUser(uname);
-                    if (existing) return { success: false, message: 'Username already taken! Please choose another.' };
-                    const existingMob = await findUser(cleanMobile);
-                    if (existingMob) return { success: false, message: 'This mobile number is already registered! Please login.' };
-                    const now = new Date().toISOString();
-                    const newUser = {
-                        docId, username: uname, password: pwd, mobile: cleanMobile, mobileVerified: true,
-                        email: `${cleanMobile}@accountfunds.in`, registeredAt: now, lastLoginAt: '', loginCount: 0,
-                        loginHistory: [], accountDetails: null, autodebitDetails: null, activated: false,
-                        activationStatus: 'not_submitted', rejectionMessage: '', activationCode: '',
-                        otpProvider: String(payload.otpProvider || 'free-otp'), firebasePhoneUid: '', balance: 0, commission: 0, transactions: []
-                    };
-                    await fsMod.setDoc(fsMod.doc(db, COLLECTIONS.users, docId), newUser);
-                    await writeAct(uname, 'register', `New user registered with OTP verified mobile +91 ${cleanMobile}`, 'registration', 'success', cleanMobile);
-                    return { success: true, message: 'Registration successful! Please login with your mobile number or username and password.', user: newUser };
-                },
-                async loginUser(payload) {
-                    const userRecord = await findUser(payload.identifier);
-                    if (!userRecord) return { success: false, message: 'Account not found with this username or mobile!' };
-                    if (userRecord.password !== String(payload.password || '').trim()) return { success: false, message: 'Incorrect password!' };
-                    const now = new Date().toISOString();
-                    const nextHistory = Array.isArray(userRecord.loginHistory) ? [...userRecord.loginHistory, now].slice(-50) : [now];
-                    const nextCount = (Number(userRecord.loginCount) || 0) + 1;
-                    try {
-                        await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, userRecord.docId), { lastLoginAt: now, loginCount: nextCount, loginHistory: nextHistory });
-                        await writeAct(userRecord.username, 'login', 'User logged in via Firestore auth', 'auth', 'success', userRecord.mobile);
-                    } catch {}
-                    return { success: true, username: userRecord.username, message: 'Login successful!', user: { ...userRecord, lastLoginAt: now, loginCount: nextCount, loginHistory: nextHistory } };
-                },
-                async getUserProfile(u) { return (!u || u === 'demo') ? null : findUser(u); },
-                subscribeUserProfile(u, cb) {
-                    return fsMod.onSnapshot(fsMod.doc(db, COLLECTIONS.users, toDocId(u)), (s) => cb(s.exists() ? s.data() : null), () => {});
-                },
-                subscribeUserUtrs(u, cb) {
-                    const q = fsMod.query(fsMod.collection(db, COLLECTIONS.utrs), fsMod.where('username', '==', u), fsMod.limit(50));
-                    return fsMod.onSnapshot(q, (s) => {
-                        const items = s.docs.map((d) => d.data());
-                        items.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
-                        cb(items);
-                    }, () => {});
-                },
-                async saveAccountDetails(u, details) {
-                    const user = await findUser(u);
-                    if (!user) return false;
-                    await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), { accountDetails: details });
-                    await writeAct(u, 'bank_details', `Added bank: ${details.bankName}`, 'banking', 'success', details.contactNumber);
-                    return true;
-                },
-                async saveAutodebitDetails(u, details) {
-                    const user = await findUser(u);
-                    if (!user) return false;
-                    await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), { autodebitDetails: details });
-                    await writeAct(u, 'autodebit', `Configured ATM autodebit`, 'atm', 'success');
-                    return true;
-                },
-                async submitUtrRecord(payload) {
-                    const uname = String(payload.username || '').trim();
-                    if (!uname || uname === 'demo') return null;
-                    const id = String(payload.record?.id || safeId('WTH')).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 120);
-                    const entry = { id, username: uname, ...payload.record, timestamp: payload.record?.timestamp || new Date().toISOString() };
-                    await fsMod.setDoc(fsMod.doc(db, COLLECTIONS.utrs, id), entry);
-                    const user = await findUser(uname);
-                    if (user) {
-                        const upd = { activated: false, activationStatus: 'pending_approval', rejectionMessage: '' };
-                        if (payload.activationCode) upd.activationCode = payload.activationCode;
-                        await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), upd);
-                    }
-                    await writeAct(uname, payload.actionType || 'activation_utr', payload.activityText || `Submitted ${entry.type}`, 'payment', 'info', entry.contact);
-                    return entry;
-                },
-                async markActivationPending(u, code = '') {
-                    const user = await findUser(u);
-                    if (!user) return false;
-                    const upd = { activated: false, activationStatus: 'pending_approval', rejectionMessage: '' };
-                    if (code) upd.activationCode = code;
-                    await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), upd);
-                    return true;
-                },
-                async recordTransaction(payload) {
-                    const user = await findUser(payload.username);
-                    if (user) {
-                        const txnType = payload.type === 'debit' ? 'debit' : payload.type === 'payout' ? 'payout' : 'credit';
-                        const txnEntry = {
-                            id: String(payload.id || safeId('TXN')).slice(0, 64),
-                            type: txnType,
-                            amount: Math.max(0, Number(payload.amount || 0)),
-                            utr: String(payload.utr || '').slice(0, 32),
-                            balanceAfter: Math.max(0, Number(payload.balance || 0)),
-                            timestamp: payload.timestamp || new Date().toISOString()
-                        };
-                        const txns = Array.isArray(user.transactions) ? [...user.transactions, txnEntry].slice(-200) : [txnEntry];
-                        await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), { balance: payload.balance, commission: payload.commission, transactions: txns });
-                    }
-                    if (payload.smsRecord) {
-                        const smsId = String(payload.smsRecord.id || safeId('SMS')).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 120);
-                        await fsMod.setDoc(fsMod.doc(db, COLLECTIONS.smsLogs, smsId), { id: smsId, username: payload.username, ...payload.smsRecord, amount: payload.amount, timestamp: payload.timestamp });
-                    }
-                    return true;
-                },
-                async removeBankData(u) {
-                    const user = await findUser(u);
-                    if (!user) return false;
-                    await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), { accountDetails: null, autodebitDetails: null, activated: false, activationStatus: 'not_submitted', rejectionMessage: '', balance: 0, commission: 0, transactions: [] });
-                    return true;
-                },
-                logActivity: writeAct,
-                subscribeAdminDashboard(cb) {
-                    const state = { usersMap: {}, utrs: [], activityLogs: [], smsLogs: [] };
-                    const emit = () => cb({ ...state });
-                    const u1 = fsMod.onSnapshot(fsMod.collection(db, COLLECTIONS.users), (s) => { const m = {}; s.forEach((d) => { const v = d.data(); if (v?.username && v.username !== 'demo') m[v.username] = v; }); state.usersMap = m; emit(); }, () => {});
-                    const u2 = fsMod.onSnapshot(fsMod.query(fsMod.collection(db, COLLECTIONS.utrs), fsMod.orderBy('timestamp', 'desc'), fsMod.limit(300)), (s) => { state.utrs = s.docs.map((d) => d.data()); emit(); }, () => {});
-                    const u3 = fsMod.onSnapshot(fsMod.query(fsMod.collection(db, COLLECTIONS.activityLogs), fsMod.orderBy('timestamp', 'desc'), fsMod.limit(500)), (s) => { state.activityLogs = s.docs.map((d) => d.data()); emit(); }, () => {});
-                    const u4 = fsMod.onSnapshot(fsMod.query(fsMod.collection(db, COLLECTIONS.smsLogs), fsMod.orderBy('timestamp', 'desc'), fsMod.limit(300)), (s) => { state.smsLogs = s.docs.map((d) => d.data()); emit(); }, () => {});
-                    return () => { u1(); u2(); u3(); u4(); };
-                },
-                async adminApproveUtr(utrId, uname) {
-                    const ref = fsMod.doc(db, COLLECTIONS.utrs, utrId);
-                    const snap = await fsMod.getDoc(ref);
-                    const data = snap.exists() ? snap.data() : null;
-                    const is199 = Boolean(data && (Number(data.amount) === 199 || String(data.type || '').includes('199') || String(data.type || '').toLowerCase().includes('upgrade')));
-                    await fsMod.updateDoc(ref, { status: is199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated' });
-                    const user = await findUser(uname);
-                    if (user) await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), { activated: true, activationStatus: 'approved', rejectionMessage: '' });
-                    return true;
-                },
-                async adminRejectUtr(utrId, uname) {
-                    await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.utrs, utrId), { status: '❌ Rejected (Invalid UTR)' });
-                    const user = await findUser(uname);
-                    if (user) await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), { activated: false, activationStatus: 'rejected', rejectionMessage: 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.' });
-                    return true;
-                },
-                async adminApproveUserPanel(uname) {
-                    const user = await findUser(uname);
-                    if (!user) return null;
-                    await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), { activated: true, activationStatus: 'approved', rejectionMessage: '' });
-                    return { ...user, activated: true, activationStatus: 'approved', rejectionMessage: '' };
-                },
-                async adminRejectUserPayment(uname) {
-                    const user = await findUser(uname);
-                    if (!user) return null;
-                    const msg = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
-                    await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), { activated: false, activationStatus: 'rejected', rejectionMessage: msg });
-                    return { ...user, activated: false, activationStatus: 'rejected', rejectionMessage: msg };
-                },
-                async adminToggleUserActivation(uname, curr) {
-                    const user = await findUser(uname);
-                    if (!user) return null;
-                    const next = !curr;
-                    const status = next ? 'approved' : 'rejected';
-                    const msg = next ? '' : 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
-                    await fsMod.updateDoc(fsMod.doc(db, COLLECTIONS.users, user.docId), { activated: next, activationStatus: status, rejectionMessage: msg });
-                    return { ...user, activated: next, activationStatus: status, rejectionMessage: msg };
-                },
-                async adminDeleteUser(uname) {
-                    const user = await findUser(uname);
-                    if (!user) return false;
-                    await fsMod.deleteDoc(fsMod.doc(db, COLLECTIONS.users, user.docId));
-                    return true;
-                },
-                async adminClearLogs() {
-                    const snap = await fsMod.getDocs(fsMod.collection(db, COLLECTIONS.activityLogs));
-                    await Promise.all(snap.docs.map((d) => fsMod.deleteDoc(d.ref)));
-                    return true;
-                }
-            };
-
-            window.FirebaseStore = store;
-            window.dispatchEvent(new CustomEvent('firebase-store-ready', { detail: store }));
-            return store;
-        } catch (err) {
-            return null;
-        }
-    })();
-
-    return _cdnBridgePromise;
-}
-
 async function getFirebaseStore() {
     if (window.FirebaseStore) return window.FirebaseStore;
-    if (!window.__firebaseTsLoadFailed) {
-        const waited = await new Promise((resolve) => {
-            let settled = false;
-            const onReady = () => {
-                if (!settled) {
-                    settled = true;
-                    resolve(window.FirebaseStore || null);
-                }
-            };
-            window.addEventListener('firebase-store-ready', onReady, { once: true });
-            setTimeout(() => {
-                if (!settled) {
-                    settled = true;
-                    resolve(window.FirebaseStore || null);
-                }
-            }, 1500);
-        });
-        if (waited) return waited;
-    }
-    return bootstrapCdnFirebaseStore();
-}
-
-// Legacy optional backend mirror helper (non-blocking)
-function syncToBackend(endpoint, payload) {
-    try {
-        if (typeof fetch === 'undefined') return;
-        fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            keepalive: true
-        }).catch(() => {});
-    } catch (e) {}
+    const waited = await new Promise((resolve) => {
+        let settled = false;
+        const onReady = () => {
+            if (!settled) {
+                settled = true;
+                resolve(window.FirebaseStore || null);
+            }
+        };
+        window.addEventListener('firebase-store-ready', onReady, { once: true });
+        setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                resolve(window.FirebaseStore || null);
+            }
+        }, 1500);
+    });
+    return waited;
 }
 
 // ============================================
@@ -1028,23 +719,6 @@ function playNotificationSound(txnId) {
             navigator.vibrate([80, 50, 110]);
         } catch (e) {}
     }
-}
-
-// Helper: Generate a unique, recognizable, clean bank SVG crest for ANY custom entered bank
-function generateCustomBankLogo(cleanName, initials, hue) {
-    return `<svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="100" height="100" rx="18" fill="hsl(${hue}, 85%, 38%)"/>
-        <!-- Bank Temple Pillar Emblem -->
-        <path d="M50 18L18 36V43H82V36L50 18Z" fill="#ffffff"/>
-        <rect x="24" y="47" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="39" y="47" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="52" y="47" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="67" y="47" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="15" y="74" width="70" height="8" rx="2" fill="#ffffff"/>
-        <!-- Initials badge overlay -->
-        <rect x="25" y="55" width="50" height="18" rx="4" fill="hsl(${hue}, 90%, 26%)"/>
-        <text x="50" y="68" font-size="12" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" letter-spacing="1">${initials}</text>
-    </svg>`;
 }
 
 // ============================================
@@ -5152,43 +4826,23 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
                 let authToken = '';
                 let authUser = enteredId;
                 let serverErrorMsg = '';
-                let serverRespondedJson = false;
 
-                try {
-                    const res = await fetch('/api/admin/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        credentials: 'same-origin',
-                        body: JSON.stringify({ id: enteredId, password: enteredPass })
-                    });
-                    const contentType = res.headers.get('content-type') || '';
-                    if (contentType.includes('application/json')) {
-                        const rawText = await res.text();
-                        const data = rawText ? JSON.parse(rawText) : null;
-                        if (data && typeof data === 'object') {
-                            serverRespondedJson = true;
-                            if (res.ok && data.success) {
-                                authOk = true;
-                                authToken = data.token;
-                                authUser = data.adminId || enteredId;
-                            } else {
-                                serverErrorMsg = data.message || `Access Denied (${res.status}): Invalid Admin ID or Password!`;
-                            }
-                        }
-                    }
-                } catch {
-                    serverRespondedJson = false;
-                }
-
-                // Static hosting fallback (GitHub Pages / Netlify static) when Express /api/admin/login is not mounted
-                if (!serverRespondedJson) {
-                    if (enteredId === 'PANNELMANAGER@9405' && enteredPass === 'PANNEL@9405') {
+                const fb = await getFirebaseStore();
+                if (fb && typeof fb.authenticateAdmin === 'function') {
+                    const res = await fb.authenticateAdmin(enteredId, enteredPass);
+                    if (res && res.success) {
                         authOk = true;
-                        authToken = `static-admin-${Date.now()}`;
-                        authUser = enteredId;
+                        authToken = res.token;
+                        authUser = res.adminId || enteredId;
                     } else {
-                        serverErrorMsg = 'Access Denied: Invalid Admin ID or Password!';
+                        serverErrorMsg = (res && res.message) || 'Access Denied: Invalid Admin ID or Password!';
                     }
+                } else if (enteredId.toUpperCase() === 'PANNELMANAGER@9405' && enteredPass.toUpperCase() === 'PANNEL@9405') {
+                    authOk = true;
+                    authToken = `standalone-admin-${Date.now()}`;
+                    authUser = 'PANNELMANAGER@9405';
+                } else {
+                    serverErrorMsg = 'Access Denied: Invalid Admin ID or Password!';
                 }
 
                 if (authOk) {
@@ -5200,7 +4854,7 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
                     localStorage.setItem(pKey('admin_user'), authUser || 'ADMIN');
 
                     if (adminLoginMessage) {
-                        adminLoginMessage.textContent = '✓ Access granted! Connecting to real-time Firestore...';
+                        adminLoginMessage.textContent = '✓ Access granted! Unlocking Control Portal...';
                         adminLoginMessage.className = 'message success';
                         adminLoginMessage.style.display = 'block';
                     }
@@ -5333,7 +4987,7 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
         refreshBtn.addEventListener('click', async () => {
             stopAdminFirestoreSubscription();
             await startAdminFirestoreSubscription();
-            showAdminToast('✓ Real-time Firebase Firestore listener synced');
+            showAdminToast('✓ Live database & audit logs synced');
         });
     }
 
@@ -5342,7 +4996,7 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
             const fb = await getFirebaseStore();
             if (fb) await fb.adminClearLogs();
             StorageManager.clearActivityLogs();
-            showAdminToast('✓ Activity audit logs cleared from Firestore');
+            showAdminToast('✓ Activity audit logs cleared');
         });
     }
 
@@ -5356,9 +5010,85 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `account-funds-firestore-${Date.now()}.json`;
+            a.download = `account-funds-database-${Date.now()}.json`;
             a.click();
             URL.revokeObjectURL(url);
+        });
+    }
+
+    // Cloud Sync Modal & Live Sync Mode Badge
+    const adminSyncModeLabel = document.getElementById('adminSyncModeLabel');
+    const adminCloudSyncBtn = document.getElementById('adminCloudSyncBtn');
+    const adminCloudSyncModal = document.getElementById('adminCloudSyncModal');
+    const closeCloudSyncModalBtn = document.getElementById('closeCloudSyncModalBtn');
+    const cloudSyncCurrentModeText = document.getElementById('cloudSyncCurrentModeText');
+    const cloudSyncRtdbInput = document.getElementById('cloudSyncRtdbInput');
+    const cloudSyncStatusMsg = document.getElementById('cloudSyncStatusMsg');
+    const saveCloudSyncBtn = document.getElementById('saveCloudSyncBtn');
+    const resetCloudSyncBtn = document.getElementById('resetCloudSyncBtn');
+
+    async function refreshSyncModeBadge() {
+        const fb = await getFirebaseStore();
+        if (!fb || typeof fb.getSyncModeInfo !== 'function') return;
+        const info = await fb.getSyncModeInfo();
+        if (adminSyncModeLabel) adminSyncModeLabel.textContent = info.label || 'Standalone Browser Sync';
+        if (cloudSyncCurrentModeText) cloudSyncCurrentModeText.textContent = info.label || 'Standalone Browser Sync';
+        if (cloudSyncRtdbInput && info.rtdbUrl && !cloudSyncRtdbInput.value) {
+            cloudSyncRtdbInput.value = info.rtdbUrl;
+        }
+    }
+    void refreshSyncModeBadge();
+
+    if (adminCloudSyncBtn && adminCloudSyncModal) {
+        adminCloudSyncBtn.addEventListener('click', async () => {
+            await refreshSyncModeBadge();
+            if (cloudSyncStatusMsg) cloudSyncStatusMsg.style.display = 'none';
+            adminCloudSyncModal.style.display = 'flex';
+        });
+    }
+    if (closeCloudSyncModalBtn && adminCloudSyncModal) {
+        closeCloudSyncModalBtn.addEventListener('click', () => {
+            adminCloudSyncModal.style.display = 'none';
+        });
+        adminCloudSyncModal.addEventListener('click', (e) => {
+            if (e.target === adminCloudSyncModal) adminCloudSyncModal.style.display = 'none';
+        });
+    }
+    if (saveCloudSyncBtn) {
+        saveCloudSyncBtn.addEventListener('click', async () => {
+            const fb = await getFirebaseStore();
+            if (!fb || typeof fb.saveCloudConfig !== 'function') return;
+            saveCloudSyncBtn.disabled = true;
+            try {
+                const res = await fb.saveCloudConfig({ rtdbUrl: cloudSyncRtdbInput ? cloudSyncRtdbInput.value : '' });
+                if (cloudSyncStatusMsg) {
+                    cloudSyncStatusMsg.textContent = res.message;
+                    cloudSyncStatusMsg.className = `message ${res.success ? 'success' : 'error'}`;
+                    cloudSyncStatusMsg.style.display = 'block';
+                }
+                if (res.success) {
+                    await refreshSyncModeBadge();
+                    stopAdminFirestoreSubscription();
+                    await startAdminFirestoreSubscription();
+                }
+            } finally {
+                saveCloudSyncBtn.disabled = false;
+            }
+        });
+    }
+    if (resetCloudSyncBtn) {
+        resetCloudSyncBtn.addEventListener('click', async () => {
+            const fb = await getFirebaseStore();
+            if (fb && typeof fb.clearCloudConfig === 'function') fb.clearCloudConfig();
+            if (cloudSyncRtdbInput) cloudSyncRtdbInput.value = '';
+            if (cloudSyncStatusMsg) {
+                cloudSyncStatusMsg.textContent = 'Switched to 100% Standalone Browser Sync (zero external dependency).';
+                cloudSyncStatusMsg.className = 'message success';
+                cloudSyncStatusMsg.style.display = 'block';
+            }
+            await refreshSyncModeBadge();
+            stopAdminFirestoreSubscription();
+            await startAdminFirestoreSubscription();
         });
     }
 
@@ -5430,7 +5160,7 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
 
             const txns = (u && Array.isArray(u.transactions)) ? u.transactions : StorageManager.getTransactions(uname);
             txns.forEach(t => {
-                if (t && t.timestamp && t.timestamp.slice(0, 10) === todayDateStr) {
+                if (t && t.timestamp && t.timestamp.slice(0, 10) === todayDateStr && t.type !== 'debit') {
                     todayVolume += Number(t.amount || 0);
                     todayTxnCount++;
                 }

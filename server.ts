@@ -277,6 +277,10 @@ async function startServer() {
   // ----------------------------------------
   // 1. REAL SMS OTP SEND & VERIFY API (Server Gateway Fallback)
   // ----------------------------------------
+  app.get('/api/health', (_req: Request, res: Response) => {
+    res.json({ ok: true, mode: 'express' });
+  });
+
   app.get('/api/auth/otp/status', (_req: Request, res: Response) => {
     const fast2smsConfigured = Boolean(
       (process.env.FAST2SMS_API_KEY || '')

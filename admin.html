@@ -19,7 +19,7 @@
             <span class="banner-divider">•</span>
             <span id="adminLiveClock">--:--:--</span>
             <span class="banner-divider">•</span>
-            <span class="sync-status">Dedicated Isolated Database Active</span>
+            <span class="sync-status" id="adminSyncModeLabel">Standalone Live Sync Active</span>
         </div>
     </div>
 
@@ -100,6 +100,9 @@
                 </div>
                 <button type="button" class="btn btn-admin-action btn-push-toggle" id="adminPushNotifyBtn" title="Enable instant browser push notifications for new registrations and payments">
                     <span id="adminPushNotifyLabel">🔔 Enable Alerts</span>
+                </button>
+                <button type="button" class="btn btn-admin-action" id="adminCloudSyncBtn" title="Configure optional cross-device Firebase Realtime DB sync for GitHub Pages">
+                    <span>☁️ Cloud Sync</span>
                 </button>
                 <button type="button" class="btn btn-admin-action" id="adminExportJsonBtn" title="Export complete real database and activity logs">
                     <span>📥 Export JSON</span>
@@ -393,12 +396,39 @@
                 </div>
             </div>
         </div>
+        <!-- CLOUD SYNC CONFIG MODAL (INDEPENDENT GITHUB PAGES MULTI-DEVICE SYNC) -->
+        <div id="adminCloudSyncModal" class="admin-modal-overlay" style="display:none;">
+            <div class="admin-modal-card" style="max-width:520px;">
+                <div class="admin-modal-header">
+                    <div>
+                        <h3>Independent Cross-Device Cloud Sync</h3>
+                        <p class="admin-modal-subtitle">100% Independent of AI Studio • Works directly on GitHub Pages</p>
+                    </div>
+                    <button type="button" class="admin-modal-close" id="closeCloudSyncModalBtn">✕</button>
+                </div>
+                <div class="admin-modal-body" style="display:flex;flex-direction:column;gap:14px;">
+                    <div style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);padding:12px;border-radius:10px;font-size:0.85rem;color:#cbd5e1;line-height:1.5;">
+                        <strong>Current Mode:</strong> <span id="cloudSyncCurrentModeText">Standalone Browser Sync</span><br>
+                        <small style="color:#94a3b8;">On the same browser/device, all data syncs automatically with zero setup. To sync between separate devices (Phone ↔ PC) on GitHub Pages, paste your own free Firebase Realtime Database URL below (or set it in <code>cloud-config.js</code>).</small>
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label for="cloudSyncRtdbInput" style="color:#e2e8f0;">Firebase Realtime Database URL (Optional)</label>
+                        <input type="url" id="cloudSyncRtdbInput" class="admin-gatekeeper-input" placeholder="https://your-project-default-rtdb.firebaseio.com" autocomplete="off">
+                    </div>
+                    <div id="cloudSyncStatusMsg" class="message" style="display:none;margin:0;"></div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <button type="button" class="btn btn-success" id="saveCloudSyncBtn" style="flex:1;">Save &amp; Connect</button>
+                        <button type="button" class="btn btn-secondary" id="resetCloudSyncBtn" style="flex:1;">Use Standalone Only</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div> <!-- /#adminMainContent -->
 
     <!-- IN-APP PAYMENT NOTIFICATION CONTAINER (FOR ADMIN SIMULATION PREVIEWS) -->
     <div id="paymentNotificationContainer" class="payment-notification-container" aria-live="assertive"></div>
 
-    <script type="module" src="./src/firebase-client.ts" onerror="window.__firebaseTsLoadFailed=true"></script>
+    <script type="module" src="./firebase-client.js"></script>
     <script type="module" src="./script.js"></script>
 </body>
 </html>
