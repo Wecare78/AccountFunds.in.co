@@ -1033,8 +1033,8 @@ async function startServer() {
   // ----------------------------------------
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get(['/admin', '/admin.html'], (_req: Request, res: Response) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'admin.html'));
+    app.get(['/admin', '/admin/', '/admin/index.html', '/admin.html'], (_req: Request, res: Response) => {
+      res.sendFile(path.resolve(__dirname, 'dist', 'admin', 'index.html'));
     });
     app.get(['/dashboard', '/dashboard.html'], (_req: Request, res: Response) => {
       res.sendFile(path.resolve(__dirname, 'dist', 'dashboard.html'));

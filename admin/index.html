@@ -2,15 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Account Funds - Admin & Backend Control</title>
-    <meta name="description" content="Account Funds Backend Management - Real-time User Activity, Today's Logins, Bank Accounts, and Audit Trail." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#050a14">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Account Funds - Admin Control Portal</title>
+    <meta name="description" content="Account Funds Independent Admin Control Portal - Real-time User Activity, UTR Approvals, Bank Accounts, and Audit Trail." />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='40' y2='40' gradientUnits='userSpaceOnUse'%3E%3Cstop stop-color='%2300E5FF'/%3E%3Cstop offset='1' stop-color='%232563EB'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M20 2L35 10.5V29.5L20 38L5 29.5V10.5L20 2Z' fill='url(%23g)'/%3E%3Cpath d='M25 13H15V20H23M15 20V27H25' stroke='%23041022' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="./style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="admin-body">
+<body class="admin-body app-shell-body">
     <!-- Top Server Status Banner -->
     <div class="admin-server-banner">
         <div class="admin-banner-inner">
@@ -19,40 +23,45 @@
             <span class="banner-divider">•</span>
             <span id="adminLiveClock">--:--:--</span>
             <span class="banner-divider">•</span>
-            <span class="sync-status" id="adminSyncModeLabel">Standalone Live Sync Active</span>
+            <span class="sync-status" id="adminSyncModeLabel">Cloud Firestore Live Sync</span>
         </div>
     </div>
 
-    <!-- SECURE ADMIN GATEKEEPER LOGIN SCREEN (RESTRICTED ACCESS - NO ID/PASS SHOWN) -->
-    <div id="adminGatekeeper" class="admin-gatekeeper-wrap">
-        <div class="admin-gatekeeper-card">
-            <div class="admin-gatekeeper-shield" aria-hidden="true">
-                <svg width="38" height="38" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect width="36" height="36" rx="10" fill="url(#afAdminGate)"/>
-                    <path d="M18 6.5L27.5 10.75V18.25C27.5 23.65 23.45 28.55 18 30C12.55 28.55 8.5 23.65 8.5 18.25V10.75L18 6.5Z" stroke="#ffffff" stroke-width="1.8" fill="rgba(255,255,255,0.12)"/>
-                    <path d="M14.5 18L17 20.5L21.5 15.5" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <defs>
-                        <linearGradient id="afAdminGate" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
-                            <stop stop-color="#3B82F6"/>
-                            <stop offset="1" stop-color="#6366F1"/>
-                        </linearGradient>
-                    </defs>
-                </svg>
+    <!-- SECURE ADMIN GATEKEEPER LOGIN SCREEN (STANDALONE) -->
+    <div id="adminGatekeeper" class="admin-gatekeeper-wrap" style="flex-direction:column;gap:14px;">
+        <div class="admin-gatekeeper-card fintech-glow-card">
+            <div class="fintech-card-hero" style="margin-bottom:20px;">
+                <div class="fintech-hero-icon-badge" aria-hidden="true">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        <path d="M9 12l2 2 4-4"/>
+                    </svg>
+                </div>
+                <div class="fintech-hero-text">
+                    <h2 class="admin-gatekeeper-title" style="margin:0 0 4px;">Admin <span class="accent-cyan">Control</span></h2>
+                    <p class="admin-gatekeeper-subtitle" style="margin:0;">Enter your authorized Admin ID and Security Password to unlock.</p>
+                </div>
             </div>
-            <h2 class="admin-gatekeeper-title">ADMIN ACCESS CONTROL</h2>
-            <p class="admin-gatekeeper-subtitle">Restricted admin area. Please enter your authorized Admin ID and Password to unlock the control portal.</p>
 
             <form id="adminLoginForm" class="admin-gatekeeper-form" autocomplete="off" onsubmit="return false;">
                 <div>
-                    <label for="adminAuthId">Admin User ID</label>
-                    <div class="admin-gatekeeper-input-wrapper">
+                    <label for="adminAuthId" class="field-label-with-icon">
+                        <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                        <span>Admin User ID</span>
+                    </label>
+                    <div class="admin-gatekeeper-input-wrapper input-icon-wrap">
+                        <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
                         <input type="text" id="adminAuthId" class="admin-gatekeeper-input" placeholder="Enter Admin ID" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" required>
                     </div>
                 </div>
 
                 <div>
-                    <label for="adminAuthPassword">Security Password</label>
-                    <div class="admin-gatekeeper-input-wrapper">
+                    <label for="adminAuthPassword" class="field-label-with-icon">
+                        <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                        <span>Security Password</span>
+                    </label>
+                    <div class="admin-gatekeeper-input-wrapper input-icon-wrap has-right-toggle">
+                        <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
                         <input type="password" id="adminAuthPassword" class="admin-gatekeeper-input" placeholder="Enter Password" autocomplete="new-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>
                         <button type="button" class="admin-toggle-pwd" id="adminTogglePasswordBtn" title="Show/Hide Password">👁️</button>
                     </div>
@@ -60,13 +69,13 @@
 
                 <div id="adminLoginMessage" class="message" style="display:none;margin-top:6px;"></div>
 
-                <button type="submit" class="btn-gatekeeper-login" id="adminLoginSubmitBtn">
-                    <span>Unlock Admin Panel →</span>
+                <button type="submit" class="btn-gatekeeper-login app-gradient-cta" id="adminLoginSubmitBtn">
+                    <span>UNLOCK ADMIN PANEL »</span>
                 </button>
             </form>
 
-            <div style="margin-top: 20px;">
-                <a href="index.html" style="color: #94a3b8; font-size: 0.84rem; text-decoration: none;">← Return to Main Website</a>
+            <div style="margin-top: 18px; text-align:center;">
+                <span class="admin-back-home-link" style="cursor:default;opacity:0.78;">🔒 Isolated Admin Portal • Live Cloud Sync</span>
             </div>
         </div>
     </div>
@@ -76,15 +85,22 @@
         <!-- ADMIN NAVBAR -->
         <header class="admin-header">
             <div class="admin-brand">
-                <div class="admin-logo-mark" aria-hidden="true">
-                    <svg width="26" height="26" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M18 4L30 9.5V18.5C30 25.3 24.8 31.3 18 33C11.2 31.3 6 25.3 6 18.5V9.5L18 4Z" stroke="#ffffff" stroke-width="2" fill="rgba(255,255,255,0.14)"/>
-                        <path d="M13.5 14H22.5M13.5 17.5H22.5M18 14C20 14 21 15.2 21 16.8C21 18.6 19.6 19.8 17.6 19.8H14.5L21 25" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <div class="brand-hex-logo" aria-hidden="true">
+                    <svg width="36" height="36" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="afAdminHeaderHex" x1="4" y1="2" x2="36" y2="38" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#22D3EE"/>
+                                <stop offset="0.55" stop-color="#0EA5E9"/>
+                                <stop offset="1" stop-color="#2563EB"/>
+                            </linearGradient>
+                        </defs>
+                        <path d="M20 2L35.5 11V29L20 38L4.5 29V11L20 2Z" fill="url(#afAdminHeaderHex)"/>
+                        <path d="M26 13H15.5V20H24M15.5 20V27H26" stroke="#041024" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
                 </div>
                 <div>
-                    <h1 class="admin-title">Account Funds <span class="badge-role">INDEPENDENT PANEL ADMIN</span></h1>
-                    <p class="admin-subtitle">Dedicated Panel Database • Isolated User Roster, UTRs, Credits/Debits &amp; Logs</p>
+                    <h1 class="admin-title">Account<span class="accent-cyan">Funds</span> <span class="badge-role">INDEPENDENT PANEL ADMIN</span></h1>
+                    <p class="admin-subtitle">Dedicated Cloud Portal • Isolated User Roster, UTRs, Credits/Debits &amp; Logs</p>
                 </div>
             </div>
 
@@ -101,15 +117,12 @@
                 <button type="button" class="btn btn-admin-action btn-push-toggle" id="adminPushNotifyBtn" title="Enable instant browser push notifications for new registrations and payments">
                     <span id="adminPushNotifyLabel">🔔 Enable Alerts</span>
                 </button>
-                <button type="button" class="btn btn-admin-action" id="adminCloudSyncBtn" title="Configure optional cross-device Firebase Realtime DB sync for GitHub Pages">
+                <button type="button" class="btn btn-admin-action" id="adminCloudSyncBtn" title="View or configure cross-device Cloud Sync">
                     <span>☁️ Cloud Sync</span>
                 </button>
                 <button type="button" class="btn btn-admin-action" id="adminExportJsonBtn" title="Export complete real database and activity logs">
                     <span>📥 Export JSON</span>
                 </button>
-                <a href="dashboard.html" class="btn btn-admin-nav" title="Switch to User Dashboard">
-                    <span>App Dashboard →</span>
-                </a>
                 <button type="button" class="btn btn-admin-logout" id="adminLogoutBtn" title="Logout and lock portal">
                     <span>🔒 Lock Portal</span>
                 </button>
@@ -138,7 +151,7 @@
             </button>
         </div>
 
-        <!-- KEY METRICS OVERVIEW (TODAY'S LOGINS & ACTIVITY) -->
+        <!-- KEY METRICS OVERVIEW -->
         <div class="admin-metrics-grid">
             <div class="admin-metric-card highlight-green">
                 <div class="metric-icon">👥</div>
@@ -224,7 +237,7 @@
             </button>
         </div>
 
-        <!-- TAB CONTENT 1: USER ROSTER ("KITNE LOGU NE LOGIN KIYA" - CLICK ANY USER FOR ALL DETAILS) -->
+        <!-- TAB CONTENT 1: USER ROSTER -->
         <section id="tab-userRoster" class="admin-tab-panel active">
             <div class="admin-panel-card">
                 <div class="panel-header-row">
@@ -233,7 +246,7 @@
                         <p class="panel-desc">Cross-device live roster of every user, mobile number, bank &amp; IFSC, ATM autodebit, submitted UTRs, and wallet balance.</p>
                     </div>
                     <div class="panel-actions">
-                        <span class="stream-live-indicator"><span class="pulse-dot"></span> Live Backend Sync</span>
+                        <span class="stream-live-indicator"><span class="pulse-dot"></span> Live Cloud Sync</span>
                     </div>
                 </div>
 
@@ -260,7 +273,7 @@
             </div>
         </section>
 
-        <!-- TAB CONTENT 2: ACTIVITY LOGS ("KISNE KYA KIYA") -->
+        <!-- TAB CONTENT 2: ACTIVITY LOGS -->
         <section id="tab-activityLogs" class="admin-tab-panel">
             <div class="admin-panel-card">
                 <div class="panel-header-row">
@@ -376,7 +389,7 @@
                 <div id="noSmsMessage" class="empty-state" style="display:none;">
                     <div class="empty-icon">🔔</div>
                     <h4>No payment SMS notifications sent yet</h4>
-                    <p>Open Running Account in Dashboard to start generating live bank credits and notifications.</p>
+                    <p>Live bank credit notifications triggered by active customer accounts will appear here.</p>
                 </div>
             </div>
         </section>
@@ -396,39 +409,40 @@
                 </div>
             </div>
         </div>
-        <!-- CLOUD SYNC CONFIG MODAL (INDEPENDENT GITHUB PAGES MULTI-DEVICE SYNC) -->
+
+        <!-- CLOUD SYNC CONFIG MODAL -->
         <div id="adminCloudSyncModal" class="admin-modal-overlay" style="display:none;">
             <div class="admin-modal-card" style="max-width:520px;">
                 <div class="admin-modal-header">
                     <div>
-                        <h3>Independent Cross-Device Cloud Sync</h3>
-                        <p class="admin-modal-subtitle">100% Independent of AI Studio • Works directly on GitHub Pages</p>
+                        <h3>Cross-Site Cloud Sync Settings</h3>
+                        <p class="admin-modal-subtitle">100% Independent • Syncs across separate GitHub Pages links &amp; devices</p>
                     </div>
                     <button type="button" class="admin-modal-close" id="closeCloudSyncModalBtn">✕</button>
                 </div>
                 <div class="admin-modal-body" style="display:flex;flex-direction:column;gap:14px;">
                     <div style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);padding:12px;border-radius:10px;font-size:0.85rem;color:#cbd5e1;line-height:1.5;">
-                        <strong>Current Mode:</strong> <span id="cloudSyncCurrentModeText">Standalone Browser Sync</span><br>
-                        <small style="color:#94a3b8;">On the same browser/device, all data syncs automatically with zero setup. To sync between separate devices (Phone ↔ PC) on GitHub Pages, paste your own free Firebase Realtime Database URL below (or set it in <code>cloud-config.js</code>).</small>
+                        <strong>Current Mode:</strong> <span id="cloudSyncCurrentModeText">Cloud Firestore Live Sync</span><br>
+                        <small style="color:#94a3b8;">Cloud Firestore real-time sync is active by default across separate GitHub Pages deployments and devices. Optionally override with a custom Firebase Realtime Database URL below.</small>
                     </div>
                     <div class="form-group" style="margin:0;">
-                        <label for="cloudSyncRtdbInput" style="color:#e2e8f0;">Firebase Realtime Database URL (Optional)</label>
+                        <label for="cloudSyncRtdbInput" style="color:#e2e8f0;">Custom Firebase Realtime Database URL (Optional Override)</label>
                         <input type="url" id="cloudSyncRtdbInput" class="admin-gatekeeper-input" placeholder="https://your-project-default-rtdb.firebaseio.com" autocomplete="off">
                     </div>
                     <div id="cloudSyncStatusMsg" class="message" style="display:none;margin:0;"></div>
                     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-                        <button type="button" class="btn btn-success" id="saveCloudSyncBtn" style="flex:1;">Save &amp; Connect</button>
-                        <button type="button" class="btn btn-secondary" id="resetCloudSyncBtn" style="flex:1;">Use Standalone Only</button>
+                        <button type="button" class="btn btn-success" id="saveCloudSyncBtn" style="flex:1;">Save Override</button>
+                        <button type="button" class="btn btn-secondary" id="resetCloudSyncBtn" style="flex:1;">Use Default Firestore Sync</button>
                     </div>
                 </div>
             </div>
         </div>
     </div> <!-- /#adminMainContent -->
 
-    <!-- IN-APP PAYMENT NOTIFICATION CONTAINER (FOR ADMIN SIMULATION PREVIEWS) -->
+    <!-- IN-APP NOTIFICATION CONTAINER -->
     <div id="paymentNotificationContainer" class="payment-notification-container" aria-live="assertive"></div>
 
     <script type="module" src="./firebase-client.js"></script>
-    <script type="module" src="./script.js"></script>
+    <script type="module" src="./admin.js"></script>
 </body>
 </html>

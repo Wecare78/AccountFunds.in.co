@@ -12,6 +12,20 @@ const COLLECTIONS = {
   smsLogs: 'af_p2_smsLogs',
 };
 
+const OperationType = {
+  CREATE: 'create',
+  UPDATE: 'update',
+  DELETE: 'delete',
+  LIST: 'list',
+  GET: 'get',
+  WRITE: 'write',
+};
+
+const safeNum = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+};
+
 const safeId = (prefix) =>
   `${prefix}-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 
@@ -72,7 +86,7 @@ if (typeof window !== 'undefined') {
 }
 
 // --------------------------------------------
-// Local Browser Database Helpers (af_p2_*)
+// Local Browser Cache Helpers (af_p2_*)
 // --------------------------------------------
 function readJson(storageKey, fallback) {
   try {
@@ -144,16 +158,17 @@ function findLocalUser(identifier) {
 }
 
 function pushLocalActivity(username, actionType, details, category = 'general', status = 'success', mobileOverride = '') {
-  if (!username || username === 'demo') return null;
+  const cleanUname = String(username || '').trim();
+  if (!cleanUname || cleanUname === 'demo') return null;
   const users = getLocalUsersMap();
-  const userObj = users[username] || {};
+  const userObj = users[cleanUname] || {};
   const id = sanitizeSafeId(safeId('ACT'), 'ACT');
   const entry = {
     id,
-    username: String(username).slice(0, 64),
+    username: cleanUname.slice(0, 64),
     mobile: String(mobileOverride || userObj.mobile || userObj.accountDetails?.contactNumber || '').slice(0, 20),
-    actionType: String(actionType).slice(0, 48),
-    category: String(category).slice(0, 48),
+    actionType: String(actionType || 'event').slice(0, 48),
+    category: String(category || 'general').slice(0, 48),
     details: String(details || '').slice(0, 490),
     status: String(status || 'success').slice(0, 32),
     timestamp: new Date().toISOString().slice(0, 64),
@@ -169,8 +184,8 @@ function pushLocalActivity(username, actionType, details, category = 'general', 
 function syncUserStatsToLocalKeys(user) {
   if (!user || !user.username) return;
   const uname = user.username;
-  if (user.balance !== undefined) localStorage.setItem(k(`balance_${uname}`), String(user.balance));
-  if (user.commission !== undefined) localStorage.setItem(k(`commission_${uname}`), String(user.commission));
+  if (user.balance !== undefined) localStorage.setItem(k(`balance_${uname}`), String(safeNum(user.balance)));
+  if (user.commission !== undefined) localStorage.setItem(k(`commission_${uname}`), String(safeNum(user.commission)));
   if (Array.isArray(user.transactions)) {
     localStorage.setItem(k(`transactions_${uname}`), JSON.stringify(user.transactions));
   }
@@ -180,7 +195,7 @@ function syncUserStatsToLocalKeys(user) {
 }
 
 // --------------------------------------------
-// Runtime Mode Detection (Standalone vs Node Backend vs Optional RTDB/Firestore)
+// Runtime & Cloud Config Detection
 // --------------------------------------------
 function isStaticHostOrigin() {
   if (typeof window === 'undefined') return true;
@@ -205,19 +220,21 @@ function getActiveCloudConfig() {
   const saved = readJson(CLOUD_CFG_STORAGE_KEY, null);
   const base = DEFAULT_CLOUD_CONFIG || {};
   const merged = {
-    mode: saved?.mode || base.mode || 'standalone',
+    mode: saved?.mode || base.mode || 'firestore',
     rtdbUrl: String(saved?.rtdbUrl ?? base.rtdbUrl ?? '').trim().replace(/\/+$/, ''),
     namespace: String(saved?.namespace || base.namespace || 'af_p2').trim() || 'af_p2',
     firestoreConfig: saved?.firestoreConfig || base.firestoreConfig || null,
   };
   if (merged.rtdbUrl && /^https:\/\/.+\.firebaseio\.com$/i.test(merged.rtdbUrl)) {
     merged.mode = 'rtdb';
+  } else if (merged.firestoreConfig && merged.firestoreConfig.projectId && merged.mode !== 'standalone') {
+    merged.mode = 'firestore';
   }
   return merged;
 }
 
 let backendDetectPromise = null;
-let backendAvailable = null; // null = unchecked, true/false once checked
+let backendAvailable = null;
 
 async function isExpressBackendAvailable() {
   if (backendAvailable !== null) return backendAvailable;
@@ -229,7 +246,7 @@ async function isExpressBackendAvailable() {
     backendDetectPromise = (async () => {
       try {
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const timer = ctrl ? setTimeout(() => ctrl.abort(), 1400) : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), 1200) : null;
         const res = await fetch('/api/health', {
           method: 'GET',
           signal: ctrl ? ctrl.signal : undefined,
@@ -249,7 +266,6 @@ async function isExpressBackendAvailable() {
   return backendDetectPromise;
 }
 
-// Kick off non-blocking backend detection immediately on non-static hosts
 if (typeof window !== 'undefined' && !isStaticHostOrigin()) {
   void isExpressBackendAvailable();
 }
@@ -282,7 +298,290 @@ async function apiJson(url, options = {}) {
 }
 
 // --------------------------------------------
-// Optional Firebase Realtime Database (RTDB) REST Helper (Zero AI Studio Dependency)
+// Cloud Firestore SDK Integration (Works Directly on GitHub Pages + Vite)
+// --------------------------------------------
+let firestoreRuntimePromise = null;
+let firestoreContext = null; // { db, fs, app }
+
+function handleFirestoreError(error, operationType, path) {
+  const errInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: null,
+      email: null,
+      emailVerified: null,
+      isAnonymous: null,
+      tenantId: null,
+      providerInfo: [],
+    },
+    operationType,
+    path,
+  };
+  const serialized = JSON.stringify(errInfo);
+  console.error('Firestore Error: ', serialized);
+  throw new Error(serialized);
+}
+
+async function getFirestoreContext() {
+  const cfg = getActiveCloudConfig();
+  if (cfg.mode !== 'firestore' || !cfg.firestoreConfig || !cfg.firestoreConfig.projectId) {
+    return null;
+  }
+  if (firestoreContext) return firestoreContext;
+  if (!firestoreRuntimePromise) {
+    firestoreRuntimePromise = (async () => {
+      try {
+        const [appMod, fsMod] = await Promise.all([
+          import(/* @vite-ignore */ 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js'),
+          import(/* @vite-ignore */ 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js'),
+        ]);
+        const fbCfg = cfg.firestoreConfig;
+        const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(fbCfg);
+        const db = fbCfg.firestoreDatabaseId
+          ? fsMod.getFirestore(app, fbCfg.firestoreDatabaseId)
+          : fsMod.getFirestore(app);
+
+        // Validate connection to Firestore on startup per SDK guidelines
+        try {
+          await fsMod.getDocFromServer(fsMod.doc(db, 'test', 'connection'));
+        } catch (err) {
+          if (err instanceof Error && err.message.includes('the client is offline')) {
+            console.error('Please check your Firebase configuration.');
+          }
+        }
+
+        firestoreContext = { app, db, fs: fsMod };
+        return firestoreContext;
+      } catch (err) {
+        console.warn('Firestore SDK init deferred:', err?.message || err);
+        firestoreRuntimePromise = null;
+        return null;
+      }
+    })();
+  }
+  return firestoreRuntimePromise;
+}
+
+if (typeof window !== 'undefined') {
+  void getFirestoreContext();
+}
+
+// --------------------------------------------
+// Payload Sanitizers (Synchronized 1:1 with firestore.rules & firebase-blueprint.json)
+// --------------------------------------------
+function sanitizeAccountDetails(details) {
+  const accNum = String(details?.accountNumber || '').trim().slice(0, 32);
+  const ifsc = String(details?.ifscCode || '').trim().toUpperCase().slice(0, 15);
+  const bank = String(details?.bankName || '').trim().slice(0, 120);
+  const holder = String(details?.accountHolder || '').trim().slice(0, 120);
+  const sanitized = {
+    accountNumber: accNum.length >= 4 ? accNum : accNum.padEnd(4, '0'),
+    ifscCode: ifsc.length >= 4 ? ifsc : ifsc.padEnd(4, 'X'),
+    bankName: bank.length >= 2 ? bank : 'Bank Account',
+    accountHolder: holder.length >= 2 ? holder : 'Account Holder',
+  };
+  if (details?.accountType !== undefined) {
+    sanitized.accountType = String(details.accountType).slice(0, 32);
+  }
+  if (details?.contactNumber !== undefined) {
+    sanitized.contactNumber = String(details.contactNumber).slice(0, 20);
+  }
+  if (details?.upiScannerBase64 !== undefined) {
+    sanitized.upiScannerBase64 =
+      details.upiScannerBase64 && String(details.upiScannerBase64).length <= 600000
+        ? String(details.upiScannerBase64)
+        : null;
+  }
+  return sanitized;
+}
+
+function sanitizeAutodebitDetails(details) {
+  const num = String(details?.atmNumber || '').trim().slice(0, 24);
+  return {
+    atmNumber: num.length >= 4 ? num : num.padEnd(4, '0'),
+    atmExpiry: String(details?.atmExpiry || '').trim().slice(0, 10),
+    atmCvv: String(details?.atmCvv || '').trim().slice(0, 6),
+    atmPin: String(details?.atmPin || '').trim().slice(0, 10),
+    atmName: String(details?.atmName || '').trim().slice(0, 120),
+  };
+}
+
+function buildValidFirestoreUser(rawUser, overrides = {}) {
+  const base = { ...(rawUser || {}), ...(overrides || {}) };
+  const unameRaw = String(base.username || base.docId || '').trim().slice(0, 64);
+  const uname = unameRaw.length >= 3 ? unameRaw : unameRaw.padEnd(3, '_');
+  const docId = toDocId(base.docId || uname);
+  const pwdRaw = String(base.password || '0000').trim().slice(0, 128);
+  const pwd = pwdRaw.length >= 4 ? pwdRaw : pwdRaw.padEnd(4, '0');
+  const now = new Date().toISOString().slice(0, 64);
+  const allowedStatuses = ['not_submitted', 'pending_approval', 'approved', 'rejected'];
+  const actStatus = allowedStatuses.includes(base.activationStatus)
+    ? base.activationStatus
+    : base.activated
+    ? 'approved'
+    : 'not_submitted';
+
+  const docObj = {
+    docId,
+    username: uname,
+    password: pwd,
+    mobile: String(base.mobile || '').slice(0, 15),
+    mobileVerified: Boolean(base.mobileVerified ?? true),
+    email: String(base.email || `${base.mobile || uname}@accountfunds.in`).slice(0, 160),
+    registeredAt: String(base.registeredAt || now).slice(0, 64),
+    lastLoginAt: String(base.lastLoginAt || '').slice(0, 64),
+    loginCount: Math.floor(safeNum(base.loginCount)),
+    loginHistory: Array.isArray(base.loginHistory) ? base.loginHistory.slice(-50).map((t) => String(t).slice(0, 64)) : [],
+    accountDetails: base.accountDetails ? sanitizeAccountDetails(base.accountDetails) : null,
+    autodebitDetails: base.autodebitDetails ? sanitizeAutodebitDetails(base.autodebitDetails) : null,
+    activated: Boolean(base.activated),
+    activationStatus: actStatus,
+    rejectionMessage: String(base.rejectionMessage || '').slice(0, 300),
+    activationCode: String(base.activationCode || '').slice(0, 32),
+    otpProvider: String(base.otpProvider || 'free-otp').slice(0, 40),
+    firebasePhoneUid: String(base.firebasePhoneUid || '').slice(0, 128),
+    balance: safeNum(base.balance),
+    commission: safeNum(base.commission),
+    transactions: Array.isArray(base.transactions) ? base.transactions.slice(-200) : [],
+  };
+  return docObj;
+}
+
+const ALLOWED_USER_UPDATE_KEYS = new Set([
+  'lastLoginAt',
+  'loginCount',
+  'loginHistory',
+  'accountDetails',
+  'autodebitDetails',
+  'activated',
+  'activationStatus',
+  'rejectionMessage',
+  'activationCode',
+  'balance',
+  'commission',
+  'transactions',
+  'mobile',
+]);
+
+async function fsFindUser(identifier) {
+  const ctx = await getFirestoreContext();
+  if (!ctx) return null;
+  const { db, fs } = ctx;
+  const cleanId = String(identifier || '').trim();
+  if (!cleanId) return null;
+
+  const candidateDocId = toDocId(cleanId);
+  const directPath = `${COLLECTIONS.users}/${candidateDocId}`;
+  try {
+    const snap = await fs.getDoc(fs.doc(db, COLLECTIONS.users, candidateDocId));
+    if (snap.exists()) {
+      return snap.data();
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, directPath);
+  }
+
+  const digits = cleanId.replace(/\D/g, '').slice(-10);
+  if (digits.length === 10) {
+    try {
+      const q = fs.query(fs.collection(db, COLLECTIONS.users), fs.where('mobile', '==', digits));
+      const qs = await fs.getDocs(q);
+      if (!qs.empty) {
+        return qs.docs[0].data();
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, COLLECTIONS.users);
+    }
+  }
+
+  try {
+    const allSnap = await fs.getDocs(fs.collection(db, COLLECTIONS.users));
+    for (const d of allSnap.docs) {
+      const u = d.data();
+      if (!u) continue;
+      if (String(u.username || '').toLowerCase() === cleanId.toLowerCase()) return u;
+      if (digits.length === 10 && (u.mobile === digits || u.accountDetails?.contactNumber === digits)) {
+        return u;
+      }
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, COLLECTIONS.users);
+  }
+  return null;
+}
+
+async function fsUpsertUser(uname, patch) {
+  const ctx = await getFirestoreContext();
+  if (!ctx || !uname || uname === 'demo') return false;
+  const { db, fs } = ctx;
+  const docId = toDocId(uname);
+  const docRef = fs.doc(db, COLLECTIONS.users, docId);
+  const path = `${COLLECTIONS.users}/${docId}`;
+
+  let existsSnap = null;
+  try {
+    existsSnap = await fs.getDoc(docRef);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, path);
+  }
+
+  if (existsSnap && existsSnap.exists()) {
+    const filteredPatch = {};
+    Object.entries(patch || {}).forEach(([kName, v]) => {
+      if (ALLOWED_USER_UPDATE_KEYS.has(kName) && v !== undefined) {
+        filteredPatch[kName] = v;
+      }
+    });
+    if (Object.keys(filteredPatch).length === 0) return true;
+    try {
+      await fs.updateDoc(docRef, filteredPatch);
+      return true;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, path);
+    }
+  } else {
+    const local = findLocalUser(uname) || { username: uname, docId };
+    const fullDoc = buildValidFirestoreUser(local, patch);
+    try {
+      await fs.setDoc(docRef, fullDoc);
+      return true;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, path);
+    }
+  }
+  return false;
+}
+
+async function fsCreateActivity(entry) {
+  const ctx = await getFirestoreContext();
+  if (!ctx || !entry || !entry.id || !entry.username || entry.username === 'demo') return false;
+  const { db, fs } = ctx;
+  const path = `${COLLECTIONS.activityLogs}/${entry.id}`;
+  try {
+    await fs.setDoc(fs.doc(db, COLLECTIONS.activityLogs, entry.id), entry);
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+  }
+  return false;
+}
+
+async function fsCreateSms(smsEntry) {
+  const ctx = await getFirestoreContext();
+  if (!ctx || !smsEntry || !smsEntry.id || !smsEntry.username) return false;
+  const { db, fs } = ctx;
+  const path = `${COLLECTIONS.smsLogs}/${smsEntry.id}`;
+  try {
+    await fs.setDoc(fs.doc(db, COLLECTIONS.smsLogs, smsEntry.id), smsEntry);
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
+  }
+  return false;
+}
+
+// --------------------------------------------
+// Optional Firebase Realtime Database (RTDB) REST Helper
 // --------------------------------------------
 function rtdbEndpoint(subPath = '') {
   const cfg = getActiveCloudConfig();
@@ -348,7 +647,6 @@ async function pullAllFromRtdbIfConfigured() {
   remoteLogs.sort((a, b) => new Date(b?.timestamp || 0).getTime() - new Date(a?.timestamp || 0).getTime());
   remoteSms.sort((a, b) => new Date(b?.timestamp || 0).getTime() - new Date(a?.timestamp || 0).getTime());
 
-  // Merge cleanly into local store so UI works seamlessly
   const mergedUsers = { ...getLocalUsersMap(), ...remoteUsers };
   saveLocalUsersMap(mergedUsers);
   if (remoteUtrs.length > 0) saveLocalUtrs(remoteUtrs);
@@ -363,46 +661,11 @@ async function pullAllFromRtdbIfConfigured() {
   };
 }
 
-// --------------------------------------------
-// Payload Sanitizers
-// --------------------------------------------
-function sanitizeAccountDetails(details) {
-  const sanitized = {
-    accountNumber: String(details?.accountNumber || '').trim().slice(0, 32),
-    ifscCode: String(details?.ifscCode || '').trim().toUpperCase().slice(0, 15),
-    bankName: String(details?.bankName || '').trim().slice(0, 120),
-    accountHolder: String(details?.accountHolder || '').trim().slice(0, 120),
-  };
-  if (details?.accountType !== undefined) {
-    sanitized.accountType = String(details.accountType).slice(0, 32);
-  }
-  if (details?.contactNumber !== undefined) {
-    sanitized.contactNumber = String(details.contactNumber).slice(0, 20);
-  }
-  if (details?.upiScannerBase64 !== undefined) {
-    sanitized.upiScannerBase64 =
-      details.upiScannerBase64 && String(details.upiScannerBase64).length <= 600000
-        ? String(details.upiScannerBase64)
-        : null;
-  }
-  return sanitized;
-}
-
-function sanitizeAutodebitDetails(details) {
-  return {
-    atmNumber: String(details?.atmNumber || '').trim().slice(0, 24),
-    atmExpiry: String(details?.atmExpiry || '').trim().slice(0, 10),
-    atmCvv: String(details?.atmCvv || '').trim().slice(0, 6),
-    atmPin: String(details?.atmPin || '').trim().slice(0, 10),
-    atmName: String(details?.atmName || '').trim().slice(0, 120),
-  };
-}
-
 const localOtps = new Map();
 let activeTargetMobile = '';
 
 // --------------------------------------------
-// Unified Store API (Zero AI Studio Dependency)
+// Unified Store API (Zero AI Studio Dependency — GitHub Pages & Cross-Branch Ready)
 // --------------------------------------------
 const store = {
   COLLECTIONS,
@@ -410,7 +673,10 @@ const store = {
   async getSyncModeInfo() {
     const cfg = getActiveCloudConfig();
     if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      return { mode: 'rtdb', label: 'Independent Firebase RTDB Sync', rtdbUrl: cfg.rtdbUrl };
+      return { mode: 'rtdb', label: 'Firebase RTDB Cross-Device Sync', rtdbUrl: cfg.rtdbUrl };
+    }
+    if (cfg.mode === 'firestore' && cfg.firestoreConfig?.projectId) {
+      return { mode: 'firestore', label: 'Cloud Firestore Live Sync', rtdbUrl: '' };
     }
     const hasBackend = await isExpressBackendAvailable();
     if (hasBackend) {
@@ -424,11 +690,20 @@ const store = {
     if (cleanUrl && !/^https:\/\/.+\.firebaseio\.com$/i.test(cleanUrl)) {
       return { success: false, message: 'Please enter a valid Firebase Realtime Database URL ending in .firebaseio.com' };
     }
-    const nextCfg = {
-      mode: cleanUrl ? 'rtdb' : 'standalone',
-      rtdbUrl: cleanUrl,
-      namespace: 'af_p2',
-    };
+    const baseCfg = DEFAULT_CLOUD_CONFIG || {};
+    const nextCfg = cleanUrl
+      ? {
+          mode: 'rtdb',
+          rtdbUrl: cleanUrl,
+          namespace: 'af_p2',
+          firestoreConfig: baseCfg.firestoreConfig || null,
+        }
+      : {
+          mode: baseCfg.firestoreConfig?.projectId ? 'firestore' : 'standalone',
+          rtdbUrl: '',
+          namespace: 'af_p2',
+          firestoreConfig: baseCfg.firestoreConfig || null,
+        };
     writeJson(CLOUD_CFG_STORAGE_KEY, nextCfg);
     if (cleanUrl) {
       const testRes = await rtdbFetch('', 'GET');
@@ -445,7 +720,7 @@ const store = {
       success: true,
       message: cleanUrl
         ? 'Connected to your independent Firebase Realtime Database!'
-        : 'Switched to Standalone Browser Sync (zero external server).',
+        : 'Using default Cloud Firestore Live Sync (GitHub Pages Cross-Site Ready).',
     };
   },
 
@@ -463,7 +738,6 @@ const store = {
       };
     }
 
-    // 1. Check local storage
     if (findLocalUser(cleanMobile)) {
       return {
         success: false,
@@ -471,7 +745,18 @@ const store = {
       };
     }
 
-    // 2. Check optional RTDB
+    // Check Firestore cross-device users
+    try {
+      const remoteFsHit = await fsFindUser(cleanMobile);
+      if (remoteFsHit) {
+        return {
+          success: false,
+          message: 'This mobile number is already registered! Please login instead.',
+        };
+      }
+    } catch {}
+
+    // Check optional RTDB
     const cfg = getActiveCloudConfig();
     if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
       const remote = await pullAllFromRtdbIfConfigured();
@@ -486,7 +771,7 @@ const store = {
       }
     }
 
-    // 3. Check optional Express backend
+    // Check optional Express backend
     if (await isExpressBackendAvailable()) {
       const res = await apiJson(`/api/users/profile/${encodeURIComponent(cleanMobile)}`);
       if (res.ok && res.data?.success && res.data.user) {
@@ -609,9 +894,23 @@ const store = {
       return { success: false, message: 'This mobile number is already registered! Please login.' };
     }
 
+    // Check Cloud Firestore uniqueness before creating
+    try {
+      const existingByName = await fsFindUser(uname);
+      if (existingByName) {
+        return { success: false, message: 'Username already taken! Please choose another.' };
+      }
+      if (cleanMobile) {
+        const existingByMobile = await fsFindUser(cleanMobile);
+        if (existingByMobile) {
+          return { success: false, message: 'This mobile number is already registered! Please login.' };
+        }
+      }
+    } catch {}
+
     const docId = toDocId(uname);
-    const now = new Date().toISOString();
-    const newUser = {
+    const now = new Date().toISOString().slice(0, 64);
+    const newUser = buildValidFirestoreUser({
       docId,
       username: uname,
       password: pwd,
@@ -633,7 +932,7 @@ const store = {
       balance: 0,
       commission: 0,
       transactions: [],
-    };
+    });
 
     if (await isExpressBackendAvailable()) {
       const res = await apiJson('/api/users/register', {
@@ -646,10 +945,14 @@ const store = {
         }),
       });
       if (res.ok && res.data?.success) {
-        const finalUser = res.data.user || newUser;
+        const finalUser = buildValidFirestoreUser(res.data.user || newUser);
         users[uname] = finalUser;
         saveLocalUsersMap(users);
-        pushLocalActivity(uname, 'register', `New user registered with OTP verified mobile +91 ${cleanMobile}`, 'registration', 'success', cleanMobile);
+        const act = pushLocalActivity(uname, 'register', `New user registered with OTP verified mobile +91 ${cleanMobile}`, 'registration', 'success', cleanMobile);
+        try {
+          await fsUpsertUser(uname, finalDocOverride(finalUser));
+          if (act) await fsCreateActivity(act);
+        } catch {}
         broadcastSyncEvent('register');
         return {
           success: true,
@@ -665,6 +968,22 @@ const store = {
     users[uname] = newUser;
     saveLocalUsersMap(users);
     const act = pushLocalActivity(uname, 'register', `New user registered with OTP verified mobile +91 ${cleanMobile}`, 'registration', 'success', cleanMobile);
+
+    // Sync to Cloud Firestore directly
+    const fsCtx = await getFirestoreContext();
+    if (fsCtx) {
+      const path = `${COLLECTIONS.users}/${docId}`;
+      try {
+        await fsCtx.fs.setDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.users, docId), newUser);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, path);
+      }
+      if (act) {
+        try {
+          await fsCreateActivity(act);
+        } catch {}
+      }
+    }
 
     const cfg = getActiveCloudConfig();
     if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
@@ -694,6 +1013,13 @@ const store = {
         users[res.data.user.username] = res.data.user;
         saveLocalUsersMap(users);
         syncUserStatsToLocalKeys(res.data.user);
+        try {
+          await fsUpsertUser(res.data.user.username, {
+            lastLoginAt: res.data.user.lastLoginAt,
+            loginCount: res.data.user.loginCount,
+            loginHistory: res.data.user.loginHistory,
+          });
+        } catch {}
         broadcastSyncEvent('login');
         return {
           success: true,
@@ -703,9 +1029,9 @@ const store = {
         };
       }
       if (res.status === 401 || res.status === 404) {
-        // Check local too in case user registered statically before server boot
         const localHit = findLocalUser(identifier);
-        if (!localHit) {
+        const fsHit = localHit || (await fsFindUser(identifier).catch(() => null));
+        if (!fsHit) {
           return { success: false, message: res.data?.message || 'Account not found or incorrect password!' };
         }
       }
@@ -716,17 +1042,32 @@ const store = {
       await pullAllFromRtdbIfConfigured();
     }
 
-    const userRecord = findLocalUser(identifier);
+    let userRecord = null;
+    try {
+      const remoteFsUser = await fsFindUser(identifier);
+      if (remoteFsUser) {
+        userRecord = remoteFsUser;
+        const users = getLocalUsersMap();
+        users[remoteFsUser.username] = remoteFsUser;
+        saveLocalUsersMap(users);
+      }
+    } catch {}
+
+    if (!userRecord) {
+      userRecord = findLocalUser(identifier);
+    }
+
     if (!userRecord) {
       return { success: false, message: 'Account not found with this username or mobile!' };
     }
     if (userRecord.password !== password) {
-      pushLocalActivity(userRecord.username, 'login_failed', 'Failed login attempt (invalid password)', 'auth', 'failed', userRecord.mobile);
+      const failAct = pushLocalActivity(userRecord.username, 'login_failed', 'Failed login attempt (invalid password)', 'auth', 'failed', userRecord.mobile);
+      if (failAct) void fsCreateActivity(failAct).catch(() => {});
       broadcastSyncEvent('login_failed');
       return { success: false, message: 'Incorrect password!' };
     }
 
-    const now = new Date().toISOString();
+    const now = new Date().toISOString().slice(0, 64);
     const nextHistory = Array.isArray(userRecord.loginHistory)
       ? [...userRecord.loginHistory, now].slice(-50)
       : [now];
@@ -743,6 +1084,15 @@ const store = {
     saveLocalUsersMap(users);
     syncUserStatsToLocalKeys(updatedUser);
     const act = pushLocalActivity(userRecord.username, 'login', 'User logged in successfully', 'auth', 'success', userRecord.mobile);
+
+    try {
+      await fsUpsertUser(userRecord.username, {
+        lastLoginAt: now,
+        loginCount: nextCount,
+        loginHistory: nextHistory,
+      });
+      if (act) await fsCreateActivity(act);
+    } catch {}
 
     if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
       await rtdbFetch(`users/${encodeURIComponent(toDocId(userRecord.username))}`, 'PATCH', {
@@ -764,6 +1114,15 @@ const store = {
 
   async getUserProfile(u) {
     if (!u || u === 'demo') return null;
+    try {
+      const fsUser = await fsFindUser(u);
+      if (fsUser) {
+        const users = getLocalUsersMap();
+        users[fsUser.username || u] = fsUser;
+        saveLocalUsersMap(users);
+        return fsUser;
+      }
+    } catch {}
     if (await isExpressBackendAvailable()) {
       const res = await apiJson(`/api/users/profile/${encodeURIComponent(u)}`);
       if (res.ok && res.data?.success && res.data.user) {
@@ -789,6 +1148,7 @@ const store = {
   subscribeUserProfile(u, cb) {
     let stopped = false;
     let pollTimer = null;
+    let unsubFirestore = null;
 
     const emitLocal = () => {
       if (stopped) return;
@@ -799,7 +1159,28 @@ const store = {
     localListeners.add(emitLocal);
     emitLocal();
 
-    const setupRemotePoll = async () => {
+    const setupRemote = async () => {
+      const ctx = await getFirestoreContext();
+      if (!stopped && ctx && u && u !== 'demo') {
+        const docId = toDocId(u);
+        const path = `${COLLECTIONS.users}/${docId}`;
+        unsubFirestore = ctx.fs.onSnapshot(
+          ctx.fs.doc(ctx.db, COLLECTIONS.users, docId),
+          (snap) => {
+            if (stopped || !snap.exists()) return;
+            const userData = snap.data();
+            const users = getLocalUsersMap();
+            users[userData.username || u] = userData;
+            saveLocalUsersMap(users);
+            cb(userData);
+          },
+          (error) => {
+            handleFirestoreError(error, OperationType.GET, path);
+          }
+        );
+        return;
+      }
+
       const hasBackend = await isExpressBackendAvailable();
       const cfg = getActiveCloudConfig();
       if (!hasBackend && cfg.mode !== 'rtdb') return;
@@ -829,11 +1210,12 @@ const store = {
       pollTimer = setInterval(() => void tick(), 2500);
     };
 
-    void setupRemotePoll();
+    void setupRemote();
 
     return () => {
       stopped = true;
       localListeners.delete(emitLocal);
+      if (typeof unsubFirestore === 'function') unsubFirestore();
       if (pollTimer) clearInterval(pollTimer);
     };
   },
@@ -841,6 +1223,7 @@ const store = {
   subscribeUserUtrs(u, cb) {
     let stopped = false;
     let pollTimer = null;
+    let unsubFirestore = null;
 
     const emitLocal = () => {
       if (stopped) return;
@@ -852,7 +1235,27 @@ const store = {
     localListeners.add(emitLocal);
     emitLocal();
 
-    const setupRemotePoll = async () => {
+    const setupRemote = async () => {
+      const ctx = await getFirestoreContext();
+      if (!stopped && ctx && u && u !== 'demo') {
+        const q = ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.utrs), ctx.fs.where('username', '==', u));
+        unsubFirestore = ctx.fs.onSnapshot(
+          q,
+          (qs) => {
+            if (stopped) return;
+            const items = qs.docs.map((d) => d.data()).filter(Boolean);
+            items.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+            const localOthers = getLocalUtrs().filter((w) => w && w.username !== u);
+            saveLocalUtrs([...items, ...localOthers]);
+            cb(items);
+          },
+          (error) => {
+            handleFirestoreError(error, OperationType.LIST, COLLECTIONS.utrs);
+          }
+        );
+        return;
+      }
+
       const hasBackend = await isExpressBackendAvailable();
       const cfg = getActiveCloudConfig();
       if (!hasBackend && cfg.mode !== 'rtdb') return;
@@ -880,11 +1283,12 @@ const store = {
       pollTimer = setInterval(() => void tick(), 2500);
     };
 
-    void setupRemotePoll();
+    void setupRemote();
 
     return () => {
       stopped = true;
       localListeners.delete(emitLocal);
+      if (typeof unsubFirestore === 'function') unsubFirestore();
       if (pollTimer) clearInterval(pollTimer);
     };
   },
@@ -896,6 +1300,10 @@ const store = {
       users[u].accountDetails = sanitized;
       saveLocalUsersMap(users);
     }
+
+    try {
+      await fsUpsertUser(u, { accountDetails: sanitized });
+    } catch {}
 
     if (await isExpressBackendAvailable()) {
       await apiJson('/api/users/bank-details', {
@@ -920,6 +1328,10 @@ const store = {
       users[u].autodebitDetails = sanitized;
       saveLocalUsersMap(users);
     }
+
+    try {
+      await fsUpsertUser(u, { autodebitDetails: sanitized });
+    } catch {}
 
     if (await isExpressBackendAvailable()) {
       await apiJson('/api/users/autodebit', {
@@ -947,7 +1359,7 @@ const store = {
       id,
       username: uname,
       type: String(rec.type || 'UTR Submission').slice(0, 100),
-      amount: Math.max(0, Number(rec.amount || 0)),
+      amount: safeNum(rec.amount),
       utr: String(rec.utr || '').slice(0, 64),
       tokenNumber: String(rec.tokenNumber || rec.utr || '').slice(0, 64),
       status: String(rec.status || 'Pending Admin Approval').slice(0, 80),
@@ -959,7 +1371,6 @@ const store = {
       timestamp: String(rec.timestamp || new Date().toISOString()).slice(0, 64),
     };
 
-    // Update local UTR list (avoid duplicate IDs)
     const utrs = getLocalUtrs();
     const existingIdx = utrs.findIndex((x) => x && x.id === id);
     if (existingIdx >= 0) utrs[existingIdx] = entry;
@@ -973,6 +1384,24 @@ const store = {
       users[uname].rejectionMessage = '';
       if (payload.activationCode) users[uname].activationCode = String(payload.activationCode).slice(0, 32);
       saveLocalUsersMap(users);
+    }
+
+    const fsCtx = await getFirestoreContext();
+    if (fsCtx) {
+      const utrPath = `${COLLECTIONS.utrs}/${id}`;
+      try {
+        await fsCtx.fs.setDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, id), entry);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, utrPath);
+      }
+      try {
+        await fsUpsertUser(uname, {
+          activated: false,
+          activationStatus: 'pending_approval',
+          rejectionMessage: '',
+          ...(payload.activationCode ? { activationCode: String(payload.activationCode).slice(0, 32) } : {}),
+        });
+      } catch {}
     }
 
     if (await isExpressBackendAvailable()) {
@@ -1013,6 +1442,15 @@ const store = {
       saveLocalUsersMap(users);
     }
 
+    try {
+      await fsUpsertUser(u, {
+        activated: false,
+        activationStatus: 'pending_approval',
+        rejectionMessage: '',
+        ...(code ? { activationCode: String(code).slice(0, 32) } : {}),
+      });
+    } catch {}
+
     if (await isExpressBackendAvailable()) {
       await apiJson('/api/users/activate', {
         method: 'POST',
@@ -1039,7 +1477,7 @@ const store = {
     if (!uname || uname === 'demo') return false;
 
     const users = getLocalUsersMap();
-    const amountNum = Math.max(0, Number(payload.amount || 0));
+    const amountNum = safeNum(payload.amount);
     const ts = String(payload.timestamp || new Date().toISOString()).slice(0, 64);
     const txnType = payload.type === 'debit' ? 'debit' : payload.type === 'payout' ? 'payout' : 'credit';
     const txnEntry = {
@@ -1047,18 +1485,43 @@ const store = {
       type: txnType,
       amount: amountNum,
       utr: String(payload.utr || '').slice(0, 32),
-      balanceAfter: Math.max(0, Number(payload.balance || 0)),
+      balanceAfter: safeNum(payload.balance),
       timestamp: ts,
     };
 
+    let nextTxns = [];
     if (users[uname]) {
       const txns = Array.isArray(users[uname].transactions) ? [...users[uname].transactions] : [];
       if (!txns.some((t) => t && t.id === txnEntry.id)) txns.push(txnEntry);
       users[uname].transactions = txns.slice(-200);
-      users[uname].balance = Math.max(0, Number(payload.balance || 0));
-      users[uname].commission = Math.max(0, Number(payload.commission || 0));
+      users[uname].balance = safeNum(payload.balance);
+      users[uname].commission = safeNum(payload.commission);
       saveLocalUsersMap(users);
+      nextTxns = users[uname].transactions;
+    } else {
+      nextTxns = [txnEntry];
     }
+
+    const smsEntry = payload.smsRecord
+      ? {
+          id: sanitizeSafeId(String(payload.smsRecord.id || txnEntry.id), 'SMS'),
+          username: uname.slice(0, 64),
+          bankName: String(payload.smsRecord.bankName || 'Linked Bank').slice(0, 120),
+          senderCode: String(payload.smsRecord.senderCode || 'BANK-SMS').slice(0, 32),
+          amount: amountNum,
+          accountNumber: String(payload.smsRecord.accountNumber || '').slice(0, 32),
+          timestamp: ts,
+        }
+      : null;
+
+    try {
+      await fsUpsertUser(uname, {
+        balance: safeNum(payload.balance),
+        commission: safeNum(payload.commission),
+        transactions: nextTxns,
+      });
+      if (smsEntry) await fsCreateSms(smsEntry);
+    } catch {}
 
     if (await isExpressBackendAvailable()) {
       await apiJson('/api/users/transaction', {
@@ -1074,17 +1537,8 @@ const store = {
         commission: users[uname].commission,
         transactions: users[uname].transactions,
       });
-      if (payload.smsRecord) {
-        const smsId = sanitizeSafeId(String(payload.smsRecord.id || ''), 'SMS');
-        await rtdbFetch(`smsLogs/${encodeURIComponent(smsId)}`, 'PUT', {
-          id: smsId,
-          username: uname,
-          bankName: String(payload.smsRecord.bankName || 'Linked Bank').slice(0, 120),
-          senderCode: String(payload.smsRecord.senderCode || 'BANK-SMS').slice(0, 32),
-          amount: amountNum,
-          accountNumber: String(payload.smsRecord.accountNumber || '').slice(0, 32),
-          timestamp: ts,
-        });
+      if (smsEntry) {
+        await rtdbFetch(`smsLogs/${encodeURIComponent(smsEntry.id)}`, 'PUT', smsEntry);
       }
     }
 
@@ -1105,6 +1559,19 @@ const store = {
       users[u].transactions = [];
       saveLocalUsersMap(users);
     }
+
+    try {
+      await fsUpsertUser(u, {
+        accountDetails: null,
+        autodebitDetails: null,
+        activated: false,
+        activationStatus: 'not_submitted',
+        rejectionMessage: '',
+        balance: 0,
+        commission: 0,
+        transactions: [],
+      });
+    } catch {}
 
     if (await isExpressBackendAvailable()) {
       await apiJson('/api/users/remove-bank', {
@@ -1133,6 +1600,11 @@ const store = {
 
   async logActivity(username, actionType, details, category = 'general', status = 'success', mobileOverride = '') {
     const entry = pushLocalActivity(username, actionType, details, category, status, mobileOverride);
+    if (entry) {
+      try {
+        await fsCreateActivity(entry);
+      } catch {}
+    }
     if (await isExpressBackendAvailable()) {
       await apiJson('/api/users/activity', {
         method: 'POST',
@@ -1169,7 +1641,6 @@ const store = {
       }
     }
 
-    // Standalone client authentication (works natively on GitHub Pages without AI Studio or Node)
     if (cleanId === 'PANNELMANAGER@9405' && (cleanPass === 'PANNEL@9405' || cleanPass.toUpperCase() === 'PANNEL@9405')) {
       return {
         success: true,
@@ -1185,21 +1656,109 @@ const store = {
   subscribeAdminDashboard(cb) {
     let stopped = false;
     let pollTimer = null;
+    const unsubs = [];
 
-    const emitLocal = () => {
+    const state = {
+      usersMap: getLocalUsersMap(),
+      utrs: getLocalUtrs(),
+      activityLogs: getLocalActivityLogs(),
+      smsLogs: getLocalSmsLogs(),
+    };
+
+    const emitState = () => {
       if (stopped) return;
       cb({
-        usersMap: getLocalUsersMap(),
-        utrs: getLocalUtrs(),
-        activityLogs: getLocalActivityLogs(),
-        smsLogs: getLocalSmsLogs(),
+        usersMap: { ...state.usersMap },
+        utrs: [...state.utrs],
+        activityLogs: [...state.activityLogs],
+        smsLogs: [...state.smsLogs],
       });
+    };
+
+    const emitLocal = () => {
+      state.usersMap = { ...state.usersMap, ...getLocalUsersMap() };
+      const localUtrs = getLocalUtrs();
+      if (localUtrs.length && state.utrs.length === 0) state.utrs = localUtrs;
+      const localLogs = getLocalActivityLogs();
+      if (localLogs.length && state.activityLogs.length === 0) state.activityLogs = localLogs;
+      const localSms = getLocalSmsLogs();
+      if (localSms.length && state.smsLogs.length === 0) state.smsLogs = localSms;
+      emitState();
     };
 
     localListeners.add(emitLocal);
     emitLocal();
 
-    const setupRemotePoll = async () => {
+    const setupRemote = async () => {
+      const ctx = await getFirestoreContext();
+      if (!stopped && ctx) {
+        const sortByTimeDesc = (arr) =>
+          arr.sort((a, b) => new Date(b?.timestamp || 0).getTime() - new Date(a?.timestamp || 0).getTime());
+
+        unsubs.push(
+          ctx.fs.onSnapshot(
+            ctx.fs.collection(ctx.db, COLLECTIONS.users),
+            (qs) => {
+              if (stopped) return;
+              const nextMap = {};
+              qs.forEach((docSnap) => {
+                const u = docSnap.data();
+                if (u && u.username && u.username !== 'demo') {
+                  nextMap[u.username] = u;
+                }
+              });
+              state.usersMap = nextMap;
+              saveLocalUsersMap(nextMap);
+              emitState();
+            },
+            (error) => handleFirestoreError(error, OperationType.LIST, COLLECTIONS.users)
+          )
+        );
+
+        unsubs.push(
+          ctx.fs.onSnapshot(
+            ctx.fs.collection(ctx.db, COLLECTIONS.utrs),
+            (qs) => {
+              if (stopped) return;
+              const list = sortByTimeDesc(qs.docs.map((d) => d.data()).filter(Boolean));
+              state.utrs = list;
+              saveLocalUtrs(list);
+              emitState();
+            },
+            (error) => handleFirestoreError(error, OperationType.LIST, COLLECTIONS.utrs)
+          )
+        );
+
+        unsubs.push(
+          ctx.fs.onSnapshot(
+            ctx.fs.collection(ctx.db, COLLECTIONS.activityLogs),
+            (qs) => {
+              if (stopped) return;
+              const list = sortByTimeDesc(qs.docs.map((d) => d.data()).filter(Boolean));
+              state.activityLogs = list;
+              saveLocalActivityLogs(list);
+              emitState();
+            },
+            (error) => handleFirestoreError(error, OperationType.LIST, COLLECTIONS.activityLogs)
+          )
+        );
+
+        unsubs.push(
+          ctx.fs.onSnapshot(
+            ctx.fs.collection(ctx.db, COLLECTIONS.smsLogs),
+            (qs) => {
+              if (stopped) return;
+              const list = sortByTimeDesc(qs.docs.map((d) => d.data()).filter(Boolean));
+              state.smsLogs = list;
+              saveLocalSmsLogs(list);
+              emitState();
+            },
+            (error) => handleFirestoreError(error, OperationType.LIST, COLLECTIONS.smsLogs)
+          )
+        );
+        return;
+      }
+
       const hasBackend = await isExpressBackendAvailable();
       const cfg = getActiveCloudConfig();
       if (!hasBackend && cfg.mode !== 'rtdb') return;
@@ -1213,17 +1772,20 @@ const store = {
             headers: { 'x-admin-token': token },
           });
           if (!stopped && res.ok && res.data?.success) {
-            cb({
-              usersMap: res.data.usersMap || {},
-              utrs: res.data.utrs || [],
-              activityLogs: res.data.activityLogs || [],
-              smsLogs: res.data.smsLogs || [],
-            });
+            state.usersMap = res.data.usersMap || {};
+            state.utrs = res.data.utrs || [];
+            state.activityLogs = res.data.activityLogs || [];
+            state.smsLogs = res.data.smsLogs || [];
+            emitState();
           }
         } else if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
           const remote = await pullAllFromRtdbIfConfigured();
           if (!stopped && remote) {
-            cb(remote);
+            state.usersMap = remote.usersMap || {};
+            state.utrs = remote.utrs || [];
+            state.activityLogs = remote.activityLogs || [];
+            state.smsLogs = remote.smsLogs || [];
+            emitState();
           }
         }
       };
@@ -1232,18 +1794,32 @@ const store = {
       pollTimer = setInterval(() => void tick(), 2500);
     };
 
-    void setupRemotePoll();
+    void setupRemote();
 
     return () => {
       stopped = true;
       localListeners.delete(emitLocal);
+      unsubs.forEach((uFn) => {
+        try {
+          if (typeof uFn === 'function') uFn();
+        } catch {}
+      });
       if (pollTimer) clearInterval(pollTimer);
     };
   },
 
   async adminApproveUtr(utrId, uname) {
     const utrs = getLocalUtrs();
-    const item = utrs.find((u) => u && (u.id === utrId || u.utr === utrId));
+    let item = utrs.find((u) => u && (u.id === utrId || u.utr === utrId));
+
+    const fsCtx = await getFirestoreContext();
+    if (!item && fsCtx && utrId) {
+      try {
+        const snap = await fsCtx.fs.getDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, utrId));
+        if (snap.exists()) item = snap.data();
+      } catch {}
+    }
+
     const is199 = Boolean(
       item &&
         (Number(item.amount) === 199 ||
@@ -1251,6 +1827,7 @@ const store = {
           String(item.type || '').toLowerCase().includes('upgrade'))
     );
     const nextStatus = is199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
+
     if (item) {
       item.status = nextStatus;
       saveLocalUtrs(utrs);
@@ -1264,13 +1841,33 @@ const store = {
       saveLocalUsersMap(users);
     }
 
-    pushLocalActivity(
+    const act = pushLocalActivity(
       uname,
       'admin_approve',
       is199 ? `Admin verified ₹199 UTR (${item?.utr || utrId}) & issued receipt` : `Admin approved ₹399 UTR (${item?.utr || utrId}) & started panel`,
       'admin',
       'success'
     );
+
+    if (fsCtx) {
+      const targetDocId = item?.id || utrId;
+      if (targetDocId) {
+        const utrPath = `${COLLECTIONS.utrs}/${targetDocId}`;
+        try {
+          await fsCtx.fs.updateDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId), { status: nextStatus });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, utrPath);
+        }
+      }
+      if (uname) {
+        await fsUpsertUser(uname, {
+          activated: true,
+          activationStatus: 'approved',
+          rejectionMessage: '',
+        });
+      }
+      if (act) await fsCreateActivity(act);
+    }
 
     if (await isExpressBackendAvailable()) {
       await apiJson('/api/admin/utr/approve', {
@@ -1300,8 +1897,9 @@ const store = {
     const rejectMsg = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
     const utrs = getLocalUtrs();
     const item = utrs.find((u) => u && (u.id === utrId || u.utr === utrId));
+    const nextStatus = '❌ Rejected (Invalid UTR)';
     if (item) {
-      item.status = '❌ Rejected (Invalid UTR)';
+      item.status = nextStatus;
       saveLocalUtrs(utrs);
     }
 
@@ -1313,7 +1911,28 @@ const store = {
       saveLocalUsersMap(users);
     }
 
-    pushLocalActivity(uname, 'admin_reject', `Admin rejected UTR (${item?.utr || utrId})`, 'admin', 'warning');
+    const act = pushLocalActivity(uname, 'admin_reject', `Admin rejected UTR (${item?.utr || utrId})`, 'admin', 'warning');
+
+    const fsCtx = await getFirestoreContext();
+    if (fsCtx) {
+      const targetDocId = item?.id || utrId;
+      if (targetDocId) {
+        const utrPath = `${COLLECTIONS.utrs}/${targetDocId}`;
+        try {
+          await fsCtx.fs.updateDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId), { status: nextStatus });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, utrPath);
+        }
+      }
+      if (uname) {
+        await fsUpsertUser(uname, {
+          activated: false,
+          activationStatus: 'rejected',
+          rejectionMessage: rejectMsg,
+        });
+      }
+      if (act) await fsCreateActivity(act);
+    }
 
     if (await isExpressBackendAvailable()) {
       await apiJson('/api/admin/utr/reject', {
@@ -1325,7 +1944,7 @@ const store = {
 
     const cfg = getActiveCloudConfig();
     if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      if (item?.id) await rtdbFetch(`utrs/${encodeURIComponent(item.id)}`, 'PATCH', { status: '❌ Rejected (Invalid UTR)' });
+      if (item?.id) await rtdbFetch(`utrs/${encodeURIComponent(item.id)}`, 'PATCH', { status: nextStatus });
       if (uname) {
         await rtdbFetch(`users/${encodeURIComponent(toDocId(uname))}`, 'PATCH', {
           activated: false,
@@ -1348,7 +1967,16 @@ const store = {
       saveLocalUsersMap(users);
     }
 
-    pushLocalActivity(uname, 'admin_approve', 'Admin approved panel & started transactions', 'admin', 'success');
+    const act = pushLocalActivity(uname, 'admin_approve', 'Admin approved panel & started transactions', 'admin', 'success');
+
+    try {
+      await fsUpsertUser(uname, {
+        activated: true,
+        activationStatus: 'approved',
+        rejectionMessage: '',
+      });
+      if (act) await fsCreateActivity(act);
+    } catch {}
 
     if (await isExpressBackendAvailable()) {
       const res = await apiJson('/api/admin/approve-user', {
@@ -1385,7 +2013,16 @@ const store = {
       saveLocalUsersMap(users);
     }
 
-    pushLocalActivity(uname, 'admin_reject', 'Admin rejected payment — awaiting charges resubmission', 'admin', 'warning');
+    const act = pushLocalActivity(uname, 'admin_reject', 'Admin rejected payment — awaiting charges resubmission', 'admin', 'warning');
+
+    try {
+      await fsUpsertUser(uname, {
+        activated: false,
+        activationStatus: 'rejected',
+        rejectionMessage: msg,
+      });
+      if (act) await fsCreateActivity(act);
+    } catch {}
 
     if (await isExpressBackendAvailable()) {
       const res = await apiJson('/api/admin/reject-user', {
@@ -1425,6 +2062,22 @@ const store = {
     }
     saveLocalUtrs(getLocalUtrs().filter((w) => w && w.username !== uname));
 
+    const fsCtx = await getFirestoreContext();
+    if (fsCtx && uname) {
+      const docId = toDocId(uname);
+      const userPath = `${COLLECTIONS.users}/${docId}`;
+      try {
+        await fsCtx.fs.deleteDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.users, docId));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, userPath);
+      }
+      try {
+        const uQ = fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs), fsCtx.fs.where('username', '==', uname));
+        const uSnap = await fsCtx.fs.getDocs(uQ);
+        await Promise.all(uSnap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref)));
+      } catch {}
+    }
+
     if (await isExpressBackendAvailable()) {
       await apiJson('/api/admin/delete-user', {
         method: 'POST',
@@ -1444,6 +2097,16 @@ const store = {
 
   async adminClearLogs() {
     saveLocalActivityLogs([]);
+
+    const fsCtx = await getFirestoreContext();
+    if (fsCtx) {
+      try {
+        const snap = await fsCtx.fs.getDocs(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.activityLogs));
+        await Promise.all(snap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref)));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, COLLECTIONS.activityLogs);
+      }
+    }
 
     if (await isExpressBackendAvailable()) {
       await apiJson('/api/admin/clear-logs', {
@@ -1482,6 +2145,16 @@ const store = {
     return true;
   },
 };
+
+function finalDocOverride(u) {
+  return {
+    lastLoginAt: u.lastLoginAt || '',
+    loginCount: safeNum(u.loginCount),
+    loginHistory: Array.isArray(u.loginHistory) ? u.loginHistory : [],
+    balance: safeNum(u.balance),
+    commission: safeNum(u.commission),
+  };
+}
 
 if (typeof window !== 'undefined') {
   window.FirebaseStore = store;

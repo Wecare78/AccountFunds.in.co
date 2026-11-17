@@ -80,7 +80,7 @@ service cloud.firestore {
     function isValidUtr(data, utrId) {
       return data is map &&
         data.keys().hasAll(['id', 'username', 'type', 'amount', 'status', 'timestamp']) &&
-        data.keys().hasOnly(['id', 'username', 'type', 'amount', 'utr', 'tokenNumber', 'status', 'bank', 'ifsc', 'accNumber', 'contact', 'timestamp']) &&
+        data.keys().hasOnly(['id', 'username', 'type', 'amount', 'utr', 'tokenNumber', 'status', 'bank', 'ifsc', 'accNumber', 'accountHolder', 'contact', 'timestamp']) &&
         data.id is string && data.id == utrId && data.id.size() <= 128 &&
         data.username is string && data.username.size() >= 1 && data.username.size() <= 64 &&
         data.type is string && data.type.size() <= 100 &&
@@ -91,6 +91,7 @@ service cloud.firestore {
         (!('bank' in data) || (data.bank is string && data.bank.size() <= 120)) &&
         (!('ifsc' in data) || (data.ifsc is string && data.ifsc.size() <= 20)) &&
         (!('accNumber' in data) || (data.accNumber is string && data.accNumber.size() <= 32)) &&
+        (!('accountHolder' in data) || (data.accountHolder is string && data.accountHolder.size() <= 120)) &&
         (!('contact' in data) || (data.contact is string && data.contact.size() <= 20)) &&
         data.timestamp is string && data.timestamp.size() <= 64;
     }

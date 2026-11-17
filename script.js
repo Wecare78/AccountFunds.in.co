@@ -32,6 +32,89 @@ const pKey = (key) => `${PANEL_STORAGE_NS}${key}`;
     });
 })();
 
+(function initMobileAppShell() {
+    const drawer = document.getElementById('appNavDrawer');
+    const drawerOverlay = document.getElementById('appDrawerOverlay');
+    const drawerToggleBtn = document.getElementById('appDrawerToggleBtn');
+    const drawerCloseBtn = document.getElementById('appDrawerCloseBtn');
+
+    const closeDrawer = () => {
+        if (drawer) drawer.classList.remove('is-open');
+        if (drawerOverlay) drawerOverlay.classList.remove('is-open');
+        document.body.style.overflow = '';
+    };
+
+    const openDrawer = () => {
+        if (drawer) drawer.classList.add('is-open');
+        if (drawerOverlay) drawerOverlay.classList.add('is-open');
+        document.body.style.overflow = 'hidden';
+    };
+
+    window.__closeAppNavDrawer = closeDrawer;
+
+    if (drawerToggleBtn) {
+        drawerToggleBtn.addEventListener('click', () => {
+            if (drawer && drawer.classList.contains('is-open')) closeDrawer();
+            else openDrawer();
+        });
+    }
+    if (drawerCloseBtn) {
+        drawerCloseBtn.addEventListener('click', closeDrawer);
+    }
+    if (drawerOverlay) {
+        drawerOverlay.addEventListener('click', closeDrawer);
+    }
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && drawer && drawer.classList.contains('is-open')) {
+            closeDrawer();
+        }
+    });
+
+    // Auth drawer tab triggers
+    const drawerTabBtns = document.querySelectorAll('[data-drawer-tab]');
+    const syncDrawerTabState = (tabName) => {
+        drawerTabBtns.forEach(b => b.classList.toggle('is-active', b.getAttribute('data-drawer-tab') === tabName));
+    };
+    drawerTabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabName = btn.getAttribute('data-drawer-tab');
+            const targetTabBtn = document.querySelector(`.tab-button[data-tab="${tabName}"]`);
+            if (targetTabBtn) targetTabBtn.click();
+            syncDrawerTabState(tabName);
+            closeDrawer();
+        });
+    });
+    document.querySelectorAll('.tab-button[data-tab]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            syncDrawerTabState(btn.getAttribute('data-tab'));
+        });
+    });
+
+    document.querySelectorAll('[data-switch-tab]').forEach(linkBtn => {
+        linkBtn.addEventListener('click', () => {
+            const tabName = linkBtn.getAttribute('data-switch-tab');
+            const targetTabBtn = document.querySelector(`.tab-button[data-tab="${tabName}"]`);
+            if (targetTabBtn) targetTabBtn.click();
+            syncDrawerTabState(tabName);
+        });
+    });
+
+    // Password visibility eye toggles
+    document.querySelectorAll('[data-toggle-pwd]').forEach(toggleBtn => {
+        toggleBtn.addEventListener('click', () => {
+            const targetId = toggleBtn.getAttribute('data-toggle-pwd');
+            const input = targetId ? document.getElementById(targetId) : null;
+            if (!input) return;
+            const showPlain = input.type === 'password';
+            input.type = showPlain ? 'text' : 'password';
+            toggleBtn.setAttribute('aria-pressed', showPlain ? 'true' : 'false');
+            toggleBtn.innerHTML = showPlain
+                ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
+                : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+        });
+    });
+})();
+
 const COLLECTIONS = {
     users: 'af_p2_users',
     utrs: 'af_p2_utrs',
@@ -539,18 +622,32 @@ function formatNotificationTime(timestamp) {
 
 
 // ============================================
-// AUTHENTIC TRUECALLER NOTIFICATION SOUND ENGINE
-// Uses ./assets/truecaller_notification.mp3 & .ogg with Web Audio API decode fallback
+// AUTHENTIC TRUECALLER CHAT MESSAGE NOTIFICATION SOUND ENGINE
+// Plays the original Truecaller Chat Message audio asset (.ogg / .mp3)
+// with foreground/background support and strict anti-duplicate protection
 // ============================================
-const TRUECALLER_MP3_SRC = './assets/truecaller_notification.mp3?v=2';
-const TRUECALLER_OGG_SRC = './assets/truecaller_notification.ogg?v=2';
+const TRUECALLER_OGG_SRC = './assets/truecaller_notification.ogg?v=3';
+const TRUECALLER_MP3_SRC = './assets/truecaller_notification.mp3?v=3';
 
 let _sharedAudioCtx = null;
 let _tcNotificationAudio = null;
 let _decodedChimeBuffer = null;
 let _decodeChimePromise = null;
+let _activeChimeSource = null;
 let _audioUnlocked = false;
+let _lastSoundPlayedAt = 0;
 const soundPlayedTxnIds = new Set();
+
+function supportsOggVorbis(audioEl) {
+    try {
+        const el = audioEl || (typeof document !== 'undefined' ? document.createElement('audio') : null);
+        if (!el || typeof el.canPlayType !== 'function') return false;
+        const can = el.canPlayType('audio/ogg; codecs="vorbis"') || el.canPlayType('audio/ogg');
+        return can === 'probably' || can === 'maybe';
+    } catch {
+        return false;
+    }
+}
 
 function getSharedAudioContext() {
     if (typeof window === 'undefined') return null;
@@ -573,19 +670,30 @@ function initTruecallerAudioElement() {
     audio.volume = 0.96;
     audio.style.display = 'none';
 
+    const oggSource = document.createElement('source');
+    oggSource.src = TRUECALLER_OGG_SRC;
+    oggSource.type = 'audio/ogg; codecs=vorbis';
+
     const mp3Source = document.createElement('source');
     mp3Source.src = TRUECALLER_MP3_SRC;
     mp3Source.type = 'audio/mpeg';
 
-    const oggSource = document.createElement('source');
-    oggSource.src = TRUECALLER_OGG_SRC;
-    oggSource.type = 'audio/ogg';
-
-    audio.appendChild(mp3Source);
-    audio.appendChild(oggSource);
+    if (supportsOggVorbis(audio)) {
+        audio.appendChild(oggSource);
+        audio.appendChild(mp3Source);
+    } else {
+        audio.appendChild(mp3Source);
+        audio.appendChild(oggSource);
+    }
 
     if (document.body) {
         document.body.appendChild(audio);
+    } else {
+        document.addEventListener('DOMContentLoaded', () => {
+            if (document.body && !audio.isConnected) {
+                document.body.appendChild(audio);
+            }
+        }, { once: true });
     }
     audio.load();
     _tcNotificationAudio = audio;
@@ -598,19 +706,24 @@ async function prefetchAndDecodeChimeBuffer() {
     const ctx = getSharedAudioContext();
     if (!ctx || typeof fetch === 'undefined') return null;
 
+    const urls = supportsOggVorbis()
+        ? [TRUECALLER_OGG_SRC, TRUECALLER_MP3_SRC]
+        : [TRUECALLER_MP3_SRC, TRUECALLER_OGG_SRC];
+
     _decodeChimePromise = (async () => {
-        for (const url of [TRUECALLER_MP3_SRC, TRUECALLER_OGG_SRC]) {
+        for (const url of urls) {
             try {
-                const res = await fetch(url);
+                const res = await fetch(url, { cache: 'force-cache' });
                 if (!res.ok) continue;
                 const arrayBuffer = await res.arrayBuffer();
                 const decoded = await ctx.decodeAudioData(arrayBuffer);
                 _decodedChimeBuffer = decoded;
                 return decoded;
             } catch {
-                // Try next asset format or fallback
+                // Try next supported asset format
             }
         }
+        _decodeChimePromise = null;
         return null;
     })();
 
@@ -627,7 +740,7 @@ function unlockNotificationAudio() {
         if (_audioUnlocked) return;
 
         const audio = initTruecallerAudioElement();
-        if (audio) {
+        if (audio && audio.paused) {
             const prevMuted = audio.muted;
             const prevVol = audio.volume;
             audio.muted = true;
@@ -636,7 +749,7 @@ function unlockNotificationAudio() {
             if (p && typeof p.then === 'function') {
                 p.then(() => {
                     audio.pause();
-                    audio.currentTime = 0;
+                    try { audio.currentTime = 0; } catch {}
                     audio.muted = prevMuted;
                     audio.volume = 0.96;
                     _audioUnlocked = true;
@@ -655,67 +768,72 @@ if (typeof document !== 'undefined') {
     ['pointerdown', 'touchstart', 'click', 'keydown'].forEach((evtName) => {
         document.addEventListener(evtName, unlockNotificationAudio, { passive: true });
     });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            const ctx = getSharedAudioContext();
+            if (ctx && ctx.state === 'suspended') {
+                ctx.resume().catch(() => {});
+            }
+            void prefetchAndDecodeChimeBuffer();
+        } else {
+            initTruecallerAudioElement();
+        }
+    });
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            initTruecallerAudioElement();
+        }, { once: true });
+    } else {
+        initTruecallerAudioElement();
+    }
 }
 
-function _playDecodedOrSynthesizedWebAudioChime() {
+function _stopAnyPlayingTruecallerSound() {
+    if (_activeChimeSource) {
+        try {
+            _activeChimeSource.onended = null;
+            _activeChimeSource.stop(0);
+            _activeChimeSource.disconnect();
+        } catch {}
+        _activeChimeSource = null;
+    }
+    if (_tcNotificationAudio && !_tcNotificationAudio.paused) {
+        try {
+            _tcNotificationAudio.pause();
+            _tcNotificationAudio.currentTime = 0;
+        } catch {}
+    }
+}
+
+function _playDecodedTruecallerBuffer() {
     try {
         const ctx = getSharedAudioContext();
-        if (!ctx) return;
+        if (!ctx || !_decodedChimeBuffer) return false;
         if (ctx.state === 'suspended') {
             ctx.resume().catch(() => {});
         }
-
-        if (_decodedChimeBuffer) {
-            const src = ctx.createBufferSource();
-            const gain = ctx.createGain();
-            gain.gain.value = 0.96;
-            src.buffer = _decodedChimeBuffer;
-            src.connect(gain);
-            gain.connect(ctx.destination);
-            src.start(0);
-            return;
-        }
-
-        const now = ctx.currentTime;
-        const chimeNotes = [
-            { freq: 987.77, start: 0.000, dur: 0.22, gain: 0.28 },
-            { freq: 1318.51, start: 0.068, dur: 0.28, gain: 0.36 },
-            { freq: 1661.22, start: 0.142, dur: 0.68, gain: 0.48 },
-            { freq: 2489.02, start: 0.146, dur: 0.44, gain: 0.14 }
-        ];
-
-        chimeNotes.forEach(({ freq, start, dur, gain: peakGain }) => {
-            const osc = ctx.createOscillator();
-            const overtone = ctx.createOscillator();
-            const gain = ctx.createGain();
-            const overGain = ctx.createGain();
-
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(freq * 1.016, now + start);
-            osc.frequency.exponentialRampToValueAtTime(freq, now + start + 0.012);
-
-            overtone.type = 'sine';
-            overtone.frequency.setValueAtTime(freq * 2.0, now + start);
-
-            gain.gain.setValueAtTime(0.0001, now + start);
-            gain.gain.linearRampToValueAtTime(peakGain, now + start + 0.004);
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
-
-            overGain.gain.setValueAtTime(0.0001, now + start);
-            overGain.gain.linearRampToValueAtTime(peakGain * 0.34, now + start + 0.004);
-            overGain.gain.exponentialRampToValueAtTime(0.0001, now + start + 0.09);
-
-            osc.connect(gain);
-            overtone.connect(overGain);
-            gain.connect(ctx.destination);
-            overGain.connect(ctx.destination);
-
-            osc.start(now + start);
-            osc.stop(now + start + dur + 0.02);
-            overtone.start(now + start);
-            overtone.stop(now + start + 0.10);
-        });
-    } catch (e) {}
+        _stopAnyPlayingTruecallerSound();
+        const src = ctx.createBufferSource();
+        const gain = ctx.createGain();
+        gain.gain.value = 0.96;
+        src.buffer = _decodedChimeBuffer;
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        _activeChimeSource = src;
+        src.onended = () => {
+            if (_activeChimeSource === src) {
+                _activeChimeSource = null;
+            }
+            try {
+                src.disconnect();
+                gain.disconnect();
+            } catch {}
+        };
+        src.start(0);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function playNotificationSound(txnId) {
@@ -728,29 +846,38 @@ function playNotificationSound(txnId) {
         }
     }
 
+    const nowMs = Date.now();
+    if (nowMs - _lastSoundPlayedAt < 350) return;
+    _lastSoundPlayedAt = nowMs;
+
     try {
+        const isBackground = typeof document !== 'undefined' && document.hidden;
         const ctx = getSharedAudioContext();
-        if (_decodedChimeBuffer && ctx && ctx.state === 'running') {
-            _playDecodedOrSynthesizedWebAudioChime();
+
+        if (!isBackground && _decodedChimeBuffer && ctx && ctx.state === 'running') {
+            _playDecodedTruecallerBuffer();
         } else {
             const audio = initTruecallerAudioElement();
             if (audio) {
+                _stopAnyPlayingTruecallerSound();
                 audio.muted = false;
                 audio.volume = 0.96;
                 try { audio.currentTime = 0; } catch {}
                 const playPromise = audio.play();
                 if (playPromise && typeof playPromise.catch === 'function') {
                     playPromise.catch(() => {
-                        _playDecodedOrSynthesizedWebAudioChime();
+                        if (_decodedChimeBuffer && ctx) {
+                            ctx.resume().then(() => {
+                                _playDecodedTruecallerBuffer();
+                            }).catch(() => {});
+                        }
                     });
                 }
             } else {
-                _playDecodedOrSynthesizedWebAudioChime();
+                _playDecodedTruecallerBuffer();
             }
         }
-    } catch (e) {
-        _playDecodedOrSynthesizedWebAudioChime();
-    }
+    } catch {}
 
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
         try {
@@ -2262,6 +2389,34 @@ function showWorkflowSection(sectionId, pushHistory = true) {
         backBtn.style.display = isMain ? 'none' : 'inline-flex';
     }
 
+    // Sync Mobile Bottom Navigation & Slide-Out Drawer active indicators
+    const setupSections = new Set([
+        'gamingFundSection', 'autodebitSection', 'activationPaymentSection',
+        'activationCodeUpiSection', 'activationCodeDisplaySection', 'codeVerificationSection'
+    ]);
+    const runningSections = new Set([
+        'runningAccountSection', 'withdrawCommissionSection', 'paymentReceiptSection'
+    ]);
+    const bonusSections = new Set(['bonusPageSection', 'bonusWithdrawSection']);
+    const bottomTarget = isMain
+        ? 'mainDashboard'
+        : setupSections.has(sectionId)
+            ? 'gamingFundSection'
+            : runningSections.has(sectionId)
+                ? 'runningAccountSection'
+                : bonusSections.has(sectionId)
+                    ? 'bonusPageSection'
+                    : 'mainDashboard';
+
+    document.querySelectorAll('.bottom-nav-item[data-nav-target]').forEach(btn => {
+        btn.classList.toggle('is-active', btn.getAttribute('data-nav-target') === bottomTarget);
+    });
+    document.querySelectorAll('.app-drawer-link[data-drawer-section]').forEach(btn => {
+        const target = btn.getAttribute('data-drawer-section');
+        const active = target === sectionId || (target === bottomTarget && target !== 'gamingFundSection');
+        btn.classList.toggle('is-active', active);
+    });
+
     if (typeof window.__onWorkflowSectionShown === 'function') {
         window.__onWorkflowSectionShown(sectionId);
     }
@@ -2395,7 +2550,7 @@ function showBonusReceipt(amount, ifsc, bank, holder, username = StorageManager.
                 <div style="display:flex;justify-content:space-between;padding:8px 0;"><span>Timestamp:</span><small>${timestamp}</small></div>
             </div>
 
-            <button type="button" class="btn btn-primary" id="closeBonusReceiptBtn" style="width:100%;margin-top:12px;">Close & Return to Dashboard</button>
+            <button type="button" class="btn btn-primary app-gradient-cta" id="closeBonusReceiptBtn" style="width:100%;margin-top:12px;">Close & Return to Dashboard</button>
         </div>
     `;
 
@@ -3275,7 +3430,7 @@ if (document.getElementById('welcomeMessage')) {
             <div class="receipt-actions-row">
                 <button type="button" class="btn btn-secondary" id="printReceiptBtn">Print / Save PDF</button>
                 <button type="button" class="btn btn-secondary" id="copyReceiptDetailsBtn">Copy Receipt</button>
-                <button type="button" class="btn btn-primary" id="finalizeVerifiedReceiptBtn">Done &amp; Return to Dashboard</button>
+                <button type="button" class="btn btn-primary app-gradient-cta" id="finalizeVerifiedReceiptBtn">Done &amp; Return to Dashboard</button>
             </div>
         `;
 
@@ -4528,6 +4683,50 @@ if (document.getElementById('welcomeMessage')) {
         });
     }
 
+    // Wire Native Mobile Bottom Nav & Slide-Out Drawer Actions
+    const navigateDashboardTarget = (target) => {
+        if (typeof window.__closeAppNavDrawer === 'function') {
+            window.__closeAppNavDrawer();
+        }
+        if (target === 'mainDashboard') {
+            showWorkflowSection('mainDashboard');
+        } else if (target === 'gamingFundSection') {
+            if (gamingFundBtn) gamingFundBtn.click();
+            else showWorkflowSection('gamingFundSection');
+        } else if (target === 'autodebitSection') {
+            showWorkflowSection('autodebitSection');
+        } else if (target === 'runningAccountSection') {
+            if (openRunningBtn) openRunningBtn.click();
+            else showWorkflowSection('runningAccountSection');
+        } else if (target === 'bonusPageSection') {
+            if (bonusBox) bonusBox.click();
+            else showWorkflowSection('bonusPageSection');
+        }
+    };
+
+    document.querySelectorAll('.bottom-nav-item[data-nav-target]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            navigateDashboardTarget(btn.getAttribute('data-nav-target'));
+        });
+    });
+
+    document.querySelectorAll('.app-drawer-link[data-drawer-section]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            navigateDashboardTarget(btn.getAttribute('data-drawer-section'));
+        });
+    });
+
+    const drawerLogoutBtn = document.getElementById('drawerLogoutBtn');
+    if (drawerLogoutBtn) {
+        drawerLogoutBtn.addEventListener('click', () => {
+            if (typeof window.__closeAppNavDrawer === 'function') {
+                window.__closeAppNavDrawer();
+            }
+            const lBtn = document.getElementById('logoutBtn');
+            if (lBtn) lBtn.click();
+        });
+    }
+
     const removeBankBtn = document.getElementById('removeBankBtn');
     if (removeBankBtn) {
         removeBankBtn.addEventListener('click', () => {
@@ -4653,7 +4852,7 @@ if (document.getElementById('welcomeMessage')) {
             const upgradeDiv = document.createElement('div');
             upgradeDiv.className = 'upgrade-panel';
             upgradeDiv.innerHTML = `
-                <div class="upgrade-card">
+                <div class="upgrade-card fintech-glow-card">
                     <div class="payment-page-head">
                         <h4>ACCOUNT LIMIT EXCEEDS</h4>
                         <span class="payment-amount-pill">₹199 Settlement Fee</span>
@@ -4728,7 +4927,7 @@ if (document.getElementById('welcomeMessage')) {
                     <div class="upgrade-error message" id="upgradeInlineError" style="display:none;margin-top:8px;"></div>
 
                     <div class="upgrade-button-group">
-                        <button type="button" class="btn btn-primary" id="submitUpgradeUtrBtn">Submit ₹199 UTR &amp; Verify</button>
+                        <button type="button" class="btn btn-primary app-gradient-cta" id="submitUpgradeUtrBtn">Submit ₹199 UTR &amp; Verify »</button>
                         <button type="button" class="btn btn-secondary" id="cancelUpgradeBtn">Cancel</button>
                     </div>
 
@@ -5173,6 +5372,7 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
                 const n = new Notification(title, {
                     body,
                     tag: tagKey || `af-admin-${Date.now()}`,
+                    silent: true,
                     requireInteraction: false
                 });
                 n.onclick = () => {

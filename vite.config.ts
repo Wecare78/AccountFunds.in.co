@@ -17,7 +17,7 @@ export default defineConfig(() => {
         input: {
           main: path.resolve(__dirname, 'index.html'),
           dashboard: path.resolve(__dirname, 'dashboard.html'),
-          admin: path.resolve(__dirname, 'admin.html'),
+          admin: path.resolve(__dirname, 'admin/index.html'),
         },
       },
     },
