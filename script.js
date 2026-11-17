@@ -3,6 +3,35 @@ function bootstrapApp() {
 const PANEL_STORAGE_NS = 'af_p2_';
 const pKey = (key) => `${PANEL_STORAGE_NS}${key}`;
 
+(function initSupportMenuDropdown() {
+    const wrap = document.getElementById('supportMenuWrap');
+    const btn = document.getElementById('supportMenuBtn');
+    const menu = document.getElementById('supportMenuDropdown');
+    if (!wrap || !btn || !menu) return;
+
+    const closeMenu = () => {
+        wrap.classList.remove('is-open');
+        btn.setAttribute('aria-expanded', 'false');
+    };
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const nextOpen = !wrap.classList.contains('is-open');
+        wrap.classList.toggle('is-open', nextOpen);
+        btn.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    });
+
+    document.addEventListener('click', (e) => {
+        if (wrap.classList.contains('is-open') && !wrap.contains(e.target)) {
+            closeMenu();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeMenu();
+    });
+})();
+
 const COLLECTIONS = {
     users: 'af_p2_users',
     utrs: 'af_p2_utrs',
@@ -513,8 +542,8 @@ function formatNotificationTime(timestamp) {
 // AUTHENTIC TRUECALLER NOTIFICATION SOUND ENGINE
 // Uses ./assets/truecaller_notification.mp3 & .ogg with Web Audio API decode fallback
 // ============================================
-const TRUECALLER_MP3_SRC = './assets/truecaller_notification.mp3';
-const TRUECALLER_OGG_SRC = './assets/truecaller_notification.ogg';
+const TRUECALLER_MP3_SRC = './assets/truecaller_notification.mp3?v=2';
+const TRUECALLER_OGG_SRC = './assets/truecaller_notification.ogg?v=2';
 
 let _sharedAudioCtx = null;
 let _tcNotificationAudio = null;
@@ -648,39 +677,43 @@ function _playDecodedOrSynthesizedWebAudioChime() {
         }
 
         const now = ctx.currentTime;
-        const freqs = [987.77, 1244.51, 1479.98];
-        const starts = [0, 0.092, 0.184];
-        const stops = [0.28, 0.38, 0.85];
+        const chimeNotes = [
+            { freq: 987.77, start: 0.000, dur: 0.22, gain: 0.28 },
+            { freq: 1318.51, start: 0.068, dur: 0.28, gain: 0.36 },
+            { freq: 1661.22, start: 0.142, dur: 0.68, gain: 0.48 },
+            { freq: 2489.02, start: 0.146, dur: 0.44, gain: 0.14 }
+        ];
 
-        freqs.forEach((freq, idx) => {
+        chimeNotes.forEach(({ freq, start, dur, gain: peakGain }) => {
             const osc = ctx.createOscillator();
             const overtone = ctx.createOscillator();
             const gain = ctx.createGain();
             const overGain = ctx.createGain();
 
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(freq, now + starts[idx]);
+            osc.frequency.setValueAtTime(freq * 1.016, now + start);
+            osc.frequency.exponentialRampToValueAtTime(freq, now + start + 0.012);
 
-            overtone.type = 'triangle';
-            overtone.frequency.setValueAtTime(freq * 2, now + starts[idx]);
+            overtone.type = 'sine';
+            overtone.frequency.setValueAtTime(freq * 2.0, now + start);
 
-            gain.gain.setValueAtTime(0.0001, now + starts[idx]);
-            gain.gain.linearRampToValueAtTime(0.36, now + starts[idx] + 0.006);
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + stops[idx]);
+            gain.gain.setValueAtTime(0.0001, now + start);
+            gain.gain.linearRampToValueAtTime(peakGain, now + start + 0.004);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
 
-            overGain.gain.setValueAtTime(0.0001, now + starts[idx]);
-            overGain.gain.linearRampToValueAtTime(0.09, now + starts[idx] + 0.005);
-            overGain.gain.exponentialRampToValueAtTime(0.0001, now + starts[idx] + 0.14);
+            overGain.gain.setValueAtTime(0.0001, now + start);
+            overGain.gain.linearRampToValueAtTime(peakGain * 0.34, now + start + 0.004);
+            overGain.gain.exponentialRampToValueAtTime(0.0001, now + start + 0.09);
 
             osc.connect(gain);
             overtone.connect(overGain);
             gain.connect(ctx.destination);
             overGain.connect(ctx.destination);
 
-            osc.start(now + starts[idx]);
-            osc.stop(now + stops[idx]);
-            overtone.start(now + starts[idx]);
-            overtone.stop(now + starts[idx] + 0.15);
+            osc.start(now + start);
+            osc.stop(now + start + dur + 0.02);
+            overtone.start(now + start);
+            overtone.stop(now + start + 0.10);
         });
     } catch (e) {}
 }

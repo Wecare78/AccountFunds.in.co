@@ -46,12 +46,33 @@
                 </div>
             </div>
             <div class="header-right">
-                <a href="https://t.me/Anderis5801" class="telegram-pill-link telegram-icon" target="_blank" rel="noopener noreferrer" title="Helpline Contact: @Anderis5801">
-                    <svg width="17" height="17" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M29.57 6.11c.31-.96-.98-1.39-1.57-.7L3.9 18.38c-1.07.65-1.05 1.49-.2 1.89l6.46 2.01 1.53 6.03c.18.73.97.83 1.39.28l2.76-3.56 5.56 4.11c.99.74 1.75.39 1.98-.82l3.12-14.79zm-18.23 14.79l.06.06.59 5.29-2.28-8.96 11.25-6.17-9.62 9.78zm10.78-9.96l-7.67 7.14-1.27 4.13 2.72-3.14 6.22-8.13z" fill="currentColor"/>
-                    </svg>
-                    <span class="support-link-text">Support · @Anderis5801</span>
-                </a>
+                <div class="support-menu-wrap" id="supportMenuWrap">
+                    <button type="button" class="telegram-pill-link telegram-icon support-menu-btn" id="supportMenuBtn" aria-expanded="false" aria-haspopup="true" title="Official Telegram & Helpline">
+                        <svg width="17" height="17" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M29.57 6.11c.31-.96-.98-1.39-1.57-.7L3.9 18.38c-1.07.65-1.05 1.49-.2 1.89l6.46 2.01 1.53 6.03c.18.73.97.83 1.39.28l2.76-3.56 5.56 4.11c.99.74 1.75.39 1.98-.82l3.12-14.79zm-18.23 14.79l.06.06.59 5.29-2.28-8.96 11.25-6.17-9.62 9.78zm10.78-9.96l-7.67 7.14-1.27 4.13 2.72-3.14 6.22-8.13z" fill="currentColor"/>
+                        </svg>
+                        <span class="support-link-text">Support</span>
+                        <span class="support-chevron" aria-hidden="true">▾</span>
+                    </button>
+                    <div class="support-dropdown" id="supportMenuDropdown" role="menu">
+                        <a href="https://t.me/+gPDN87ly87liYTc1" class="support-dropdown-item" target="_blank" rel="noopener noreferrer" role="menuitem">
+                            <span class="support-item-icon support-icon-group" aria-hidden="true">📢</span>
+                            <span class="support-item-text">
+                                <strong>Official Telegram</strong>
+                                <small>Join Official Group Channel</small>
+                            </span>
+                            <span class="support-item-arrow" aria-hidden="true">→</span>
+                        </a>
+                        <a href="https://t.me/Anderis5801" class="support-dropdown-item" target="_blank" rel="noopener noreferrer" role="menuitem">
+                            <span class="support-item-icon support-icon-helpline" aria-hidden="true">🎧</span>
+                            <span class="support-item-text">
+                                <strong>Helpline</strong>
+                                <small>Support · @Anderis5801</small>
+                            </span>
+                            <span class="support-item-arrow" aria-hidden="true">→</span>
+                        </a>
+                    </div>
+                </div>
                 <div class="bonus-box" id="bonusBox" title="Open Bonus">
                     <span class="bonus-badge" id="bonusBadge">●</span>
                     <span class="bonus-icon" aria-hidden="true">

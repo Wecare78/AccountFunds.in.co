@@ -5726,4 +5726,135 @@ select:focus-visible {
     }
 }
 
+/* ============================================
+   SUPPORT DROPDOWN (OFFICIAL TELEGRAM + HELPLINE)
+   ============================================ */
+
+.support-menu-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.support-menu-btn {
+    cursor: pointer;
+    font-family: inherit;
+    gap: 6px;
+}
+
+.support-chevron {
+    font-size: 0.72rem;
+    opacity: 0.85;
+    transition: transform 0.2s ease;
+    display: inline-block;
+}
+
+.support-menu-wrap.is-open .support-chevron {
+    transform: rotate(180deg);
+}
+
+.support-dropdown {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: 268px;
+    max-width: calc(100vw - 24px);
+    padding: 8px;
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.96);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(56, 189, 248, 0.34);
+    box-shadow: 0 18px 42px rgba(2, 6, 23, 0.65);
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 1150;
+}
+
+.support-menu-wrap.is-open .support-dropdown {
+    display: flex;
+    animation: supportDropIn 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes supportDropIn {
+    from {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.support-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    text-decoration: none;
+    color: #f8fafc;
+    transition: background 0.18s ease, border-color 0.18s ease, transform 0.15s ease;
+}
+
+.support-dropdown-item:hover {
+    background: rgba(14, 165, 233, 0.18);
+    border-color: rgba(56, 189, 248, 0.5);
+    transform: translateX(2px);
+}
+
+.support-item-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.support-icon-group {
+    background: rgba(14, 165, 233, 0.2);
+    border: 1px solid rgba(56, 189, 248, 0.38);
+}
+
+.support-icon-helpline {
+    background: rgba(34, 197, 94, 0.18);
+    border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.support-item-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+}
+
+.support-item-text strong {
+    font-size: 0.86rem;
+    font-weight: 800;
+    color: #f8fafc;
+    line-height: 1.2;
+}
+
+.support-item-text small {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    line-height: 1.2;
+}
+
+.support-item-arrow {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: #38bdf8;
+    flex-shrink: 0;
+}
+
+
 
