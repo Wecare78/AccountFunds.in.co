@@ -954,6 +954,7 @@ const store = {
       bank: String(rec.bank || '').slice(0, 120),
       ifsc: String(rec.ifsc || '').slice(0, 20),
       accNumber: String(rec.accNumber || '').slice(0, 32),
+      accountHolder: String(rec.accountHolder || '').slice(0, 120),
       contact: String(rec.contact || '').slice(0, 20),
       timestamp: String(rec.timestamp || new Date().toISOString()).slice(0, 64),
     };

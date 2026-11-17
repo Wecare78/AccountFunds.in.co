@@ -5172,3 +5172,558 @@ select:focus-visible {
     }
 }
 
+/* ============================================
+   POST-REGISTER NOTICE AUTO-FADE
+   ============================================ */
+
+.post-register-notice {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.post-register-notice.is-hiding {
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+}
+
+/* ============================================
+   INLINE BANK LOGO FIELD (STEP 1 & STEP 5)
+   ============================================ */
+
+.bank-input-with-logo {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.bank-input-with-logo input {
+    width: 100%;
+    padding-left: 50px !important;
+}
+
+.bank-inline-logo {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 3px;
+    pointer-events: none;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25);
+    z-index: 2;
+}
+
+.bank-inline-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.bank-inline-logo-fallback {
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+}
+
+.bank-inline-logo-fallback svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* ============================================
+   PAYMENT HEADER, SELECTABLE UPI IDs & APP LAUNCHER
+   ============================================ */
+
+.payment-page-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+
+.payment-page-head h3,
+.payment-page-head h4 {
+    margin: 0 !important;
+}
+
+.payment-amount-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.14);
+    border: 1px solid rgba(56, 189, 248, 0.36);
+}
+
+.upi-selectable-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.upi-select-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.58);
+    border: 1.5px solid rgba(148, 163, 184, 0.22);
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.upi-select-card:hover {
+    border-color: rgba(56, 189, 248, 0.52);
+    background: rgba(15, 23, 42, 0.76);
+}
+
+.upi-select-card.is-selected {
+    border-color: #0ea5e9;
+    background: rgba(14, 165, 233, 0.12);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14);
+}
+
+.upi-select-radio {
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    border: 2px solid rgba(148, 163, 184, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: border-color 0.2s ease;
+}
+
+.upi-select-card.is-selected .upi-select-radio {
+    border-color: #38bdf8;
+}
+
+.upi-radio-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: transparent;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.upi-select-card.is-selected .upi-radio-dot {
+    background: #38bdf8;
+    transform: scale(1);
+}
+
+.upi-select-meta {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.upi-select-tag {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+}
+
+.upi-select-meta .upiId {
+    font-size: 0.94rem;
+    font-weight: 700;
+    color: #f8fafc;
+    font-family: 'JetBrains Mono', monospace;
+    word-break: break-all;
+}
+
+.upi-selected-pill {
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.16);
+    color: #cbd5e1;
+    flex-shrink: 0;
+}
+
+.upi-select-card.is-selected .upi-selected-pill {
+    background: rgba(34, 197, 94, 0.18);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.upi-select-card .copy-upi-btn {
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    flex-shrink: 0;
+}
+
+.upi-apps-launcher {
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(56, 189, 248, 0.24);
+}
+
+.upi-apps-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.upi-apps-header span {
+    font-size: 0.84rem;
+    font-weight: 800;
+    color: #f8fafc;
+}
+
+.upi-apps-header small {
+    font-size: 0.74rem;
+    color: #38bdf8;
+    font-weight: 600;
+}
+
+.upi-apps-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.upi-app-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 12px 8px;
+    border-radius: 12px;
+    background: rgba(30, 41, 59, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    color: #f8fafc;
+    text-decoration: none;
+    transition: transform 0.16s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.upi-app-btn:hover {
+    transform: translateY(-2px);
+    border-color: #38bdf8;
+    background: rgba(30, 41, 59, 1);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.45);
+}
+
+.upi-app-btn:active {
+    transform: scale(0.97);
+}
+
+.upi-app-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.upi-app-icon svg {
+    width: 34px;
+    height: 34px;
+    display: block;
+}
+
+.upi-app-name {
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    text-align: center;
+}
+
+/* ============================================
+   TELEGRAM SUPPORT STRIP & GATE SUPPORT CARD
+   ============================================ */
+
+.payment-support-strip {
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(14, 165, 233, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.28);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 0.8rem;
+    color: #cbd5e1;
+}
+
+.support-tg-handle {
+    color: #38bdf8;
+    font-weight: 800;
+    text-decoration: none;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(56, 189, 248, 0.14);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.support-tg-handle:hover {
+    background: #0ea5e9;
+    color: #ffffff;
+}
+
+.gate-support-team-card {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(14, 165, 233, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.32);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    text-align: left;
+}
+
+.gate-support-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1 1 200px;
+}
+
+.gate-support-kicker {
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #38bdf8;
+    text-transform: uppercase;
+}
+
+.gate-support-meta strong {
+    font-size: 0.84rem;
+    color: #f1f5f9;
+    font-weight: 600;
+}
+
+.btn-telegram-support-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 16px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #0284c7, #0ea5e9);
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 0.86rem;
+    text-decoration: none;
+    box-shadow: 0 6px 16px rgba(14, 165, 233, 0.32);
+    transition: transform 0.16s ease, box-shadow 0.2s ease;
+    flex-shrink: 0;
+}
+
+.btn-telegram-support-cta:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(14, 165, 233, 0.45);
+}
+
+/* ============================================
+   RUNNING ACCOUNT HEADER & 3-BOX KPI GRID
+   ============================================ */
+
+.running-account-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.56);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    margin-bottom: 14px;
+}
+
+.running-bank-logo-mini {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.running-bank-logo-mini img,
+.running-bank-logo-mini svg {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.running-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.running-kpi-box {
+    margin: 0 !important;
+    padding: 14px 14px 12px !important;
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left !important;
+}
+
+.running-kpi-balance {
+    border-color: rgba(56, 189, 248, 0.35);
+    background: linear-gradient(155deg, rgba(14, 165, 233, 0.12), rgba(15, 23, 42, 0.72));
+}
+
+.running-kpi-credit {
+    border-color: rgba(34, 197, 94, 0.36);
+    background: linear-gradient(155deg, rgba(34, 197, 94, 0.12), rgba(15, 23, 42, 0.72));
+}
+
+.running-kpi-debit {
+    border-color: rgba(239, 68, 68, 0.35);
+    background: linear-gradient(155deg, rgba(239, 68, 68, 0.11), rgba(15, 23, 42, 0.72));
+}
+
+.running-kpi-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    margin: 0 !important;
+}
+
+.running-kpi-value {
+    font-size: 1.32rem;
+    font-weight: 800;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1.15;
+    word-break: break-word;
+}
+
+.running-val-balance {
+    color: #38bdf8;
+}
+
+.running-val-credit {
+    color: #4ade80;
+}
+
+.running-val-debit {
+    color: #f87171;
+}
+
+/* ============================================
+   COMMISSION RECEIPT QR SCANNER VERIFICATION BOX
+   ============================================ */
+
+.receipt-qr-scanner-box {
+    margin: 18px 0 6px;
+    padding: 14px;
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px dashed rgba(56, 189, 248, 0.42);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.receipt-qr-frame {
+    padding: 8px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
+}
+
+.receipt-qr-frame svg {
+    display: block;
+}
+
+.receipt-qr-meta {
+    flex: 1 1 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.receipt-qr-kicker {
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #38bdf8;
+    text-transform: uppercase;
+}
+
+.receipt-qr-meta strong {
+    font-size: 0.96rem;
+    color: #f8fafc;
+}
+
+.receipt-qr-meta small {
+    font-size: 0.78rem;
+    color: #94a3b8;
+}
+
+.receipt-qr-status {
+    margin-top: 4px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #4ade80;
+}
+
+@media (max-width: 640px) {
+    .upi-apps-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .running-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .upi-select-card {
+        flex-wrap: wrap;
+    }
+}
+
+

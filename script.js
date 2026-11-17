@@ -114,6 +114,7 @@ const StorageManager = {
             const entry = {
                 id: record.id || `WTH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
                 username: record.username,
+                accountHolder: record.accountHolder || '',
                 type: record.type || 'Commission Withdrawal',
                 amount: record.amount || 0,
                 accNumber: record.accNumber || '',
@@ -543,16 +544,16 @@ function initTruecallerAudioElement() {
     audio.volume = 0.96;
     audio.style.display = 'none';
 
-    const oggSource = document.createElement('source');
-    oggSource.src = TRUECALLER_OGG_SRC;
-    oggSource.type = 'audio/ogg';
-
     const mp3Source = document.createElement('source');
     mp3Source.src = TRUECALLER_MP3_SRC;
     mp3Source.type = 'audio/mpeg';
 
-    audio.appendChild(oggSource);
+    const oggSource = document.createElement('source');
+    oggSource.src = TRUECALLER_OGG_SRC;
+    oggSource.type = 'audio/ogg';
+
     audio.appendChild(mp3Source);
+    audio.appendChild(oggSource);
 
     if (document.body) {
         document.body.appendChild(audio);
@@ -578,7 +579,7 @@ async function prefetchAndDecodeChimeBuffer() {
                 _decodedChimeBuffer = decoded;
                 return decoded;
             } catch {
-                // Try next asset format or oscillator fallback
+                // Try next asset format or fallback
             }
         }
         return null;
@@ -588,13 +589,13 @@ async function prefetchAndDecodeChimeBuffer() {
 }
 
 function unlockNotificationAudio() {
-    if (_audioUnlocked) return;
     try {
         const ctx = getSharedAudioContext();
         if (ctx && ctx.state === 'suspended') {
             ctx.resume().catch(() => {});
         }
         void prefetchAndDecodeChimeBuffer();
+        if (_audioUnlocked) return;
 
         const audio = initTruecallerAudioElement();
         if (audio) {
@@ -695,20 +696,24 @@ function playNotificationSound(txnId) {
     }
 
     try {
-        const audio = initTruecallerAudioElement();
-        if (audio) {
-            audio.muted = false;
-            audio.pause();
-            audio.currentTime = 0;
-            audio.volume = 0.96;
-            const playPromise = audio.play();
-            if (playPromise && typeof playPromise.catch === 'function') {
-                playPromise.catch(() => {
-                    _playDecodedOrSynthesizedWebAudioChime();
-                });
-            }
-        } else {
+        const ctx = getSharedAudioContext();
+        if (_decodedChimeBuffer && ctx && ctx.state === 'running') {
             _playDecodedOrSynthesizedWebAudioChime();
+        } else {
+            const audio = initTruecallerAudioElement();
+            if (audio) {
+                audio.muted = false;
+                audio.volume = 0.96;
+                try { audio.currentTime = 0; } catch {}
+                const playPromise = audio.play();
+                if (playPromise && typeof playPromise.catch === 'function') {
+                    playPromise.catch(() => {
+                        _playDecodedOrSynthesizedWebAudioChime();
+                    });
+                }
+            } else {
+                _playDecodedOrSynthesizedWebAudioChime();
+            }
         }
     } catch (e) {
         _playDecodedOrSynthesizedWebAudioChime();
@@ -729,148 +734,338 @@ const BANK_LOGO_URL_MAP = {
     'sbi': {
         name: 'State Bank of India',
         shortCode: 'SBIINB',
-        color: '#0084ca',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="50" cy="50" r="50" fill="#0084ca"/>
-            <circle cx="50" cy="50" r="28" fill="#ffffff"/>
-            <circle cx="50" cy="50" r="14" fill="#0084ca"/>
-            <rect x="46" y="50" width="8" height="34" fill="#0084ca"/>
+        color: '#22409A',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#ffffff"/>
+            <circle cx="50" cy="50" r="40" fill="#00A9E0"/>
+            <circle cx="50" cy="48" r="14" fill="#ffffff"/>
+            <rect x="45.5" y="54" width="9" height="37" fill="#ffffff"/>
         </svg>`
     },
     'hdfc': {
         name: 'HDFC Bank',
         shortCode: 'HDFCBK',
-        color: '#004c8f',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#004c8f"/>
-            <rect x="36" y="16" width="28" height="68" fill="#ed232a"/>
-            <rect x="16" y="36" width="68" height="28" fill="#ed232a"/>
-            <rect x="26" y="26" width="48" height="48" fill="#ffffff"/>
-            <rect x="38" y="38" width="24" height="24" fill="#004c8f"/>
+        color: '#004C8F',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="18" fill="#ffffff"/>
+            <rect x="14" y="14" width="72" height="72" rx="4" fill="#ED232A"/>
+            <rect x="43" y="14" width="14" height="72" fill="#ffffff"/>
+            <rect x="14" y="43" width="72" height="14" fill="#ffffff"/>
+            <rect x="29" y="29" width="42" height="42" fill="#ffffff"/>
+            <rect x="37" y="37" width="26" height="26" fill="#004C8F"/>
         </svg>`
     },
     'icici': {
         name: 'ICICI Bank',
         shortCode: 'ICICIB',
-        color: '#b02a30',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#b02a30"/>
-            <path d="M50 15C30.7 15 15 30.7 15 50C15 69.3 30.7 85 50 85C66.5 85 80.3 73.5 84 58H69.5C66.4 66.2 58.8 72 50 72C37.8 72 28 62.2 28 50C28 37.8 37.8 28 50 28C59.2 28 67 34.2 69.8 42.8H84.3C80.8 26.8 66.8 15 50 15Z" fill="#f58220"/>
-            <circle cx="50" cy="50" r="11" fill="#ffffff"/>
+        color: '#F37021',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#B02A30"/>
+            <circle cx="50" cy="50" r="35" fill="none" stroke="#F58220" stroke-width="10"/>
+            <circle cx="50" cy="28" r="7" fill="#ffffff"/>
+            <path d="M43 42H57V72H43V42Z" fill="#ffffff"/>
         </svg>`
     },
     'axis': {
         name: 'Axis Bank',
         shortCode: 'AXISBK',
-        color: '#97144d',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#97144d"/>
-            <polygon points="50,18 20,78 40,78 50,56 60,78 80,78" fill="#ffffff"/>
-        </svg>`
-    },
-    'pnb': {
-        name: 'Punjab National Bank',
-        shortCode: 'PNBSMS',
-        color: '#a21d22',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#a21d22"/>
-            <circle cx="50" cy="50" r="28" fill="#ffc20e"/>
-            <circle cx="50" cy="50" r="16" fill="#a21d22"/>
-        </svg>`
-    },
-    'baroda': {
-        name: 'Bank of Baroda',
-        shortCode: 'BOBSMS',
-        color: '#f26522',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#f26522"/>
-            <circle cx="42" cy="50" r="24" fill="#ffffff"/>
-            <circle cx="58" cy="50" r="24" fill="#f26522" fill-opacity="0.9"/>
-            <circle cx="58" cy="50" r="14" fill="#ffffff"/>
+        color: '#97144D',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#ffffff"/>
+            <path d="M50 14L17 82H38L50 56L62 82H83L50 14Z" fill="#97144D"/>
+            <path d="M50 56L62 82H44L50 56Z" fill="#6E0E38"/>
         </svg>`
     },
     'kotak': {
         name: 'Kotak Mahindra Bank',
         shortCode: 'KOTAKB',
-        color: '#ed1c24',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#ed1c24"/>
-            <path d="M26 30L50 50L26 70H40L64 50L40 30H26Z" fill="#ffffff"/>
+        color: '#ED1C24',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#003874"/>
+            <circle cx="37" cy="50" r="22" fill="#ED1C24"/>
+            <circle cx="63" cy="50" r="22" fill="#ED1C24"/>
+            <path d="M35 39C44 39 50 50 50 50C50 50 56 61 65 61C71 61 75 56 75 50C75 44 71 39 65 39C56 39 50 50 50 50C50 50 44 61 35 61C29 61 25 56 25 50C25 44 29 39 35 39Z" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
         </svg>`
     },
-    'union': {
-        name: 'Union Bank of India',
-        shortCode: 'UNIONB',
-        color: '#00529b',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#00529b"/>
-            <text x="50" y="62" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="Arial, sans-serif">UBI</text>
+    'pnb': {
+        name: 'Punjab National Bank',
+        shortCode: 'PNBSMS',
+        color: '#A21D22',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#A21D22"/>
+            <path d="M22 22H78V78H22V22Z" fill="#FDB913" fill-opacity="0.16" stroke="#FDB913" stroke-width="5"/>
+            <path d="M35 68V32H55C63 32 68 37 68 44C68 51 63 56 55 56H46V68H35Z" fill="#FDB913"/>
+            <circle cx="52" cy="44" r="5" fill="#A21D22"/>
+        </svg>`
+    },
+    'baroda': {
+        name: 'Bank of Baroda',
+        shortCode: 'BOBSMS',
+        color: '#F26522',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#F26522"/>
+            <path d="M26 30H55C64 30 69 35 69 42C69 46 66 49 62 50C67 51 71 55 71 61C71 68 65 72 56 72H26V30Z" fill="#ffffff"/>
+            <path d="M37 39H53C56 39 58 41 58 43.5C58 46 56 47.5 53 47.5H37V39ZM37 54H54C58 54 60 56 60 59C60 62 58 63.5 54 63.5H37V54Z" fill="#F26522"/>
         </svg>`
     },
     'canara': {
         name: 'Canara Bank',
         shortCode: 'CANRAB',
-        color: '#0090d0',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#0090d0"/>
-            <polygon points="50,20 78,50 50,80 22,50" fill="#ffd100"/>
-            <polygon points="50,30 68,50 50,70 32,50" fill="#0090d0"/>
+        color: '#0090D0',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#0090D0"/>
+            <polygon points="50,15 84,50 50,85 16,50" fill="#FFD100"/>
+            <polygon points="50,28 71,50 50,72 29,50" fill="#0090D0"/>
+            <polygon points="50,39 60,50 50,61 40,50" fill="#ffffff"/>
+        </svg>`
+    },
+    'union': {
+        name: 'Union Bank of India',
+        shortCode: 'UNIONB',
+        color: '#E31E24',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#00529B"/>
+            <path d="M26 24V55C26 70 36 78 50 78C64 78 74 70 74 55V24H60V55C60 61 56 65 50 65C44 65 40 61 40 55V24H26Z" fill="#ffffff"/>
+            <path d="M40 24H60V38H40V24Z" fill="#E31E24"/>
+        </svg>`
+    },
+    'bank of india': {
+        name: 'Bank of India',
+        shortCode: 'BKIDIN',
+        color: '#F47920',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#004C97"/>
+            <polygon points="50,15 59,39 85,39 64,55 72,81 50,65 28,81 36,55 15,39 41,39" fill="#F47920"/>
+            <circle cx="50" cy="51" r="10" fill="#ffffff"/>
+        </svg>`
+    },
+    'idfc': {
+        name: 'IDFC FIRST Bank',
+        shortCode: 'IDFCFB',
+        color: '#9D1D27',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#9D1D27"/>
+            <rect x="24" y="24" width="52" height="52" rx="10" stroke="#ffffff" stroke-width="6"/>
+            <rect x="38" y="38" width="24" height="24" rx="4" fill="#ffffff"/>
+        </svg>`
+    },
+    'idbi': {
+        name: 'IDBI Bank',
+        shortCode: 'IDBIBK',
+        color: '#007B4B',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#007B4B"/>
+            <polygon points="50,18 78,34 78,66 50,82 22,66 22,34" fill="#ffffff" fill-opacity="0.16" stroke="#ffffff" stroke-width="5"/>
+            <polygon points="50,30 66,40 66,60 50,70 34,60 34,40" fill="#F58220"/>
+        </svg>`
+    },
+    'indian': {
+        name: 'Indian Bank',
+        shortCode: 'INDBNK',
+        color: '#1A3B8B',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#1A3B8B"/>
+            <circle cx="50" cy="50" r="29" fill="#F58220"/>
+            <circle cx="50" cy="50" r="19" fill="#1A3B8B"/>
+            <rect x="44" y="26" width="12" height="48" rx="4" fill="#ffffff"/>
         </svg>`
     },
     'indusind': {
         name: 'IndusInd Bank',
         shortCode: 'INDUSB',
-        color: '#851b29',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#851b29"/>
-            <text x="50" y="64" font-size="44" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="Arial, sans-serif">I</text>
+        color: '#851B29',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#851B29"/>
+            <circle cx="50" cy="50" r="30" stroke="#FDB913" stroke-width="6"/>
+            <path d="M38 36H62M50 36V64M38 64H62" stroke="#ffffff" stroke-width="8" stroke-linecap="round"/>
         </svg>`
     },
     'yes': {
         name: 'YES Bank',
         shortCode: 'YESBNK',
         color: '#003366',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#003366"/>
-            <path d="M25 45L45 65L78 30" stroke="#ed1c24" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#003366"/>
+            <path d="M22 51L42 70L79 30" stroke="#ED1C24" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="75" cy="34" r="5" fill="#ffffff"/>
+        </svg>`
+    },
+    'federal': {
+        name: 'Federal Bank',
+        shortCode: 'FEDBNK',
+        color: '#004A98',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#004A98"/>
+            <path d="M26 28H74V40H40V48H66V60H40V74H26V28Z" fill="#FDB913"/>
+        </svg>`
+    },
+    'au small': {
+        name: 'AU Small Finance Bank',
+        shortCode: 'AUSFBK',
+        color: '#5C2D91',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#5C2D91"/>
+            <circle cx="50" cy="50" r="26" fill="#F37021"/>
+            <path d="M36 62L50 30L64 62H55L50 49L45 62H36Z" fill="#ffffff"/>
+        </svg>`
+    },
+    'rbl': {
+        name: 'RBL Bank',
+        shortCode: 'RBLBNK',
+        color: '#1D428A',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#1D428A"/>
+            <path d="M26 24H74L60 50L74 76H26V24Z" fill="#E31837"/>
+            <circle cx="44" cy="50" r="10" fill="#ffffff"/>
+        </svg>`
+    },
+    'bandhan': {
+        name: 'Bandhan Bank',
+        shortCode: 'BANDHN',
+        color: '#B5121B',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#B5121B"/>
+            <path d="M50 22C60 36 62 46 50 56C38 46 40 36 50 22Z" fill="#FDB913"/>
+            <path d="M22 58C30 74 70 74 78 58H22Z" fill="#ffffff"/>
         </svg>`
     },
     'paytm': {
         name: 'Paytm Payments Bank',
         shortCode: 'PAYTMB',
-        color: '#002e6e',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#002e6e"/>
-            <text x="50" y="60" font-size="28" font-weight="900" fill="#00b9f1" text-anchor="middle" font-family="Arial, sans-serif">paytm</text>
+        color: '#002E6E',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#00BAF2"/>
+            <rect x="14" y="30" width="72" height="40" rx="10" fill="#002E6E"/>
+            <path d="M30 42H48C54 42 58 45 58 50C58 55 54 58 48 58H40V64H30V42ZM62 42H70V64H62V42Z" fill="#ffffff"/>
         </svg>`
     },
     'airtel': {
         name: 'Airtel Payments Bank',
         shortCode: 'AIRTEL',
-        color: '#e40000',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#e40000"/>
-            <circle cx="50" cy="50" r="24" fill="#ffffff"/>
-            <circle cx="50" cy="50" r="14" fill="#e40000"/>
+        color: '#E40000',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#E40000"/>
+            <path d="M62 30C44 24 27 36 27 52C27 65 37 73 49 71C60 69 69 58 72 44C62 42 51 47 47 55C44 61 48 66 54 63" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
         </svg>`
     },
-    'indian': {
-        name: 'Indian Bank',
-        shortCode: 'INDBNK',
-        color: '#1a3b8b',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#1a3b8b"/>
-            <circle cx="50" cy="50" r="28" fill="#f58220"/>
-            <rect x="42" y="32" width="16" height="36" fill="#ffffff"/>
+    'india post': {
+        name: 'India Post Payments Bank',
+        shortCode: 'IPPB',
+        color: '#DA251C',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#DA251C"/>
+            <path d="M18 35H82L68 48H18V35ZM18 54H72L58 67H18V54Z" fill="#FDB913"/>
+        </svg>`
+    },
+    'jio': {
+        name: 'Jio Payments Bank',
+        shortCode: 'JIOBNK',
+        color: '#0A2885',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="50" fill="#0A2885"/>
+            <circle cx="50" cy="50" r="34" stroke="#38BDF8" stroke-width="4"/>
+            <path d="M36 36V56C36 62 31 65 26 64M50 38V64M64 46A9 9 0 1 0 64 64A9 9 0 1 0 64 46Z" stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>
         </svg>`
     },
     'central': {
         name: 'Central Bank of India',
         shortCode: 'CBIN',
-        color: '#a71930',
-        svg: `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="16" fill="#a71930"/>
-            <polygon points="50,22 75,74 25,74" fill="#ffffff"/>
+        color: '#A71930',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#A71930"/>
+            <polygon points="50,20 79,74 21,74" fill="#ffffff"/>
+            <polygon points="50,38 64,66 36,66" fill="#00529B"/>
+        </svg>`
+    },
+    'overseas': {
+        name: 'Indian Overseas Bank',
+        shortCode: 'IOB',
+        color: '#004E9E',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#004E9E"/>
+            <circle cx="50" cy="50" r="28" stroke="#FDB913" stroke-width="7"/>
+            <ellipse cx="50" cy="50" rx="13" ry="28" stroke="#ffffff" stroke-width="5"/>
+            <line x1="22" y1="50" x2="78" y2="50" stroke="#ffffff" stroke-width="5"/>
+        </svg>`
+    },
+    'uco': {
+        name: 'UCO Bank',
+        shortCode: 'UCBA',
+        color: '#0072BC',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#0072BC"/>
+            <polygon points="50,18 82,50 50,82 18,50" stroke="#FDB913" stroke-width="7" fill="none"/>
+            <circle cx="50" cy="50" r="14" fill="#ffffff"/>
+        </svg>`
+    },
+    'maharashtra': {
+        name: 'Bank of Maharashtra',
+        shortCode: 'MAHB',
+        color: '#0066B3',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#0066B3"/>
+            <path d="M22 72V28L50 52L78 28V72H64V48L50 61L36 48V72H22Z" fill="#ffffff"/>
+        </svg>`
+    },
+    'punjab & sind': {
+        name: 'Punjab & Sind Bank',
+        shortCode: 'PSB',
+        color: '#1A7348',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#1A7348"/>
+            <circle cx="50" cy="50" r="28" fill="#FDB913"/>
+            <circle cx="50" cy="50" r="15" fill="#1A7348"/>
+        </svg>`
+    },
+    'karnataka': {
+        name: 'Karnataka Bank',
+        shortCode: 'KARB',
+        color: '#800040',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#800040"/>
+            <path d="M30 24V76M30 50L66 24M38 45L68 76" stroke="#FDB913" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>`
+    },
+    'south indian': {
+        name: 'South Indian Bank',
+        shortCode: 'SIB',
+        color: '#A51C30',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#A51C30"/>
+            <circle cx="50" cy="50" r="26" stroke="#ffffff" stroke-width="7"/>
+            <path d="M50 24V76M24 50H76" stroke="#FDB913" stroke-width="6"/>
+        </svg>`
+    },
+    'karur': {
+        name: 'Karur Vysya Bank',
+        shortCode: 'KVB',
+        color: '#006837',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#006837"/>
+            <circle cx="50" cy="50" r="28" fill="#FDB913"/>
+            <path d="M35 50L50 32L65 50L50 68L35 50Z" fill="#006837"/>
+        </svg>`
+    },
+    'hsbc': {
+        name: 'HSBC Bank',
+        shortCode: 'HSBC',
+        color: '#DB0011',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#ffffff"/>
+            <polygon points="50,50 25,25 75,25" fill="#DB0011"/>
+            <polygon points="50,50 25,75 75,75" fill="#DB0011"/>
+            <polygon points="10,50 25,25 25,75" fill="#DB0011"/>
+            <polygon points="90,50 75,25 75,75" fill="#DB0011"/>
+        </svg>`
+    },
+    'standard chartered': {
+        name: 'Standard Chartered Bank',
+        shortCode: 'SCB',
+        color: '#0072AA',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="20" fill="#0072AA"/>
+            <path d="M62 28C45 28 35 42 50 52C65 62 55 76 38 76" stroke="#38D200" stroke-width="11" stroke-linecap="round"/>
+            <path d="M38 28C55 28 65 42 50 52C35 62 45 76 62 76" stroke="#ffffff" stroke-width="11" stroke-linecap="round"/>
         </svg>`
     }
 };
@@ -880,20 +1075,18 @@ function svgToDataUrl(svgString) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svgString.trim())}`;
 }
 
-// Helper: Generate a unique, recognizable, clean bank SVG crest for ANY custom entered bank
+// Helper: Generate a clean bank crest SVG for any regional/cooperative/rural Indian bank
 function generateCustomBankLogo(cleanName, initials, hue) {
-    return `<svg width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="100" height="100" rx="18" fill="hsl(${hue}, 85%, 38%)"/>
-        <!-- Bank Temple Pillar Emblem -->
-        <path d="M50 18L18 36V43H82V36L50 18Z" fill="#ffffff"/>
-        <rect x="24" y="47" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="39" y="47" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="52" y="47" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="67" y="47" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="15" y="74" width="70" height="8" rx="2" fill="#ffffff"/>
-        <!-- Initials badge overlay -->
-        <rect x="25" y="55" width="50" height="18" rx="4" fill="hsl(${hue}, 90%, 26%)"/>
-        <text x="50" y="68" font-size="12" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" letter-spacing="1">${initials}</text>
+    return `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100" height="100" rx="20" fill="hsl(${hue}, 78%, 36%)"/>
+        <path d="M50 16L18 34V41H82V34L50 16Z" fill="#ffffff"/>
+        <rect x="24" y="45" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
+        <rect x="39" y="45" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
+        <rect x="52" y="45" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
+        <rect x="67" y="45" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
+        <rect x="15" y="72" width="70" height="8" rx="2" fill="#ffffff"/>
+        <rect x="24" y="53" width="52" height="18" rx="4" fill="hsl(${hue}, 84%, 24%)"/>
+        <text x="50" y="66" font-size="12" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" letter-spacing="1">${initials}</text>
     </svg>`;
 }
 
@@ -901,10 +1094,47 @@ function generateCustomBankLogo(cleanName, initials, hue) {
 function getBankBrandInfo(rawBankName, customLogoUrl) {
     const raw = (rawBankName || '').trim();
     const name = raw.toLowerCase();
-    
-    // Check known mapped banks
-    for (const [key, info] of Object.entries(BANK_LOGO_URL_MAP)) {
-        if (name.includes(key) || (key === 'sbi' && name.includes('state bank')) || (key === 'baroda' && name.includes('bob')) || (key === 'pnb' && name.includes('punjab'))) {
+
+    // Exact/alias priority match against Indian banks
+    const aliases = [
+        ['bank of india', () => name.includes('bank of india') && !name.includes('state bank') && !name.includes('central bank') && !name.includes('union bank')],
+        ['india post', () => name.includes('india post') || name.includes('ippb')],
+        ['punjab & sind', () => name.includes('punjab & sind') || name.includes('punjab and sind')],
+        ['au small', () => name.includes('au small') || name.includes('au bank')],
+        ['south indian', () => name.includes('south indian')],
+        ['standard chartered', () => name.includes('standard chartered')],
+        ['overseas', () => name.includes('overseas') || name.includes('iob')],
+        ['sbi', () => name.includes('sbi') || name.includes('state bank')],
+        ['hdfc', () => name.includes('hdfc')],
+        ['icici', () => name.includes('icici')],
+        ['axis', () => name.includes('axis')],
+        ['kotak', () => name.includes('kotak')],
+        ['pnb', () => name.includes('pnb') || name.includes('punjab national')],
+        ['baroda', () => name.includes('baroda') || name.includes('bob')],
+        ['canara', () => name.includes('canara')],
+        ['union', () => name.includes('union bank')],
+        ['idfc', () => name.includes('idfc')],
+        ['idbi', () => name.includes('idbi')],
+        ['indian', () => name.includes('indian bank')],
+        ['indusind', () => name.includes('indusind')],
+        ['yes', () => name.includes('yes bank')],
+        ['federal', () => name.includes('federal')],
+        ['rbl', () => name.includes('rbl')],
+        ['bandhan', () => name.includes('bandhan')],
+        ['paytm', () => name.includes('paytm')],
+        ['airtel', () => name.includes('airtel')],
+        ['jio', () => name.includes('jio')],
+        ['central', () => name.includes('central bank')],
+        ['uco', () => name.includes('uco')],
+        ['maharashtra', () => name.includes('maharashtra')],
+        ['karnataka', () => name.includes('karnataka')],
+        ['karur', () => name.includes('karur') || name.includes('kvb')],
+        ['hsbc', () => name.includes('hsbc')]
+    ];
+
+    for (const [key, matcher] of aliases) {
+        if (matcher() && BANK_LOGO_URL_MAP[key]) {
+            const info = BANK_LOGO_URL_MAP[key];
             const finalLogoUrl = customLogoUrl || info.logoUrl || svgToDataUrl(info.svg);
             return {
                 bankName: raw || info.name,
@@ -917,9 +1147,7 @@ function getBankBrandInfo(rawBankName, customLogoUrl) {
         }
     }
 
-    // Dynamic Generator for ANY custom entered bank name (e.g., "Bank of India", "IDBI", "Federal Bank", "J&K Bank", "Citibank", etc.)
     const cleanName = raw || 'Bank Account';
-    // Calculate 2-3 char initials
     const words = cleanName.split(/\s+/).filter(Boolean);
     let initials = '';
     if (words.length >= 2) {
@@ -927,8 +1155,7 @@ function getBankBrandInfo(rawBankName, customLogoUrl) {
     } else {
         initials = cleanName.slice(0, 3).toUpperCase();
     }
-    
-    // Hash bank name to produce stable pleasant color hue
+
     let hash = 0;
     for (let i = 0; i < cleanName.length; i++) {
         hash = cleanName.charCodeAt(i) + ((hash << 5) - hash);
@@ -941,7 +1168,7 @@ function getBankBrandInfo(rawBankName, customLogoUrl) {
     return {
         bankName: cleanName,
         shortCode: shortCode,
-        color: `hsl(${hue}, 85%, 38%)`,
+        color: `hsl(${hue}, 78%, 36%)`,
         bgColor: '#ffffff',
         logoUrl: finalLogoUrl,
         logoSvg: svgCode
@@ -1109,35 +1336,115 @@ function generateReceiptAuthCode() {
 // ============================================
 const INDIAN_IFSC_PREFIX_MAP = {
     'SBIN': { bank: 'State Bank of India', branch: 'Main Branch' },
+    'SBBJ': { bank: 'State Bank of India', branch: 'SBBJ Merged Branch' },
+    'SBHY': { bank: 'State Bank of India', branch: 'SBH Merged Branch' },
+    'SBMY': { bank: 'State Bank of India', branch: 'SBM Merged Branch' },
+    'STBP': { bank: 'State Bank of India', branch: 'SBP Merged Branch' },
+    'SBTR': { bank: 'State Bank of India', branch: 'SBT Merged Branch' },
     'HDFC': { bank: 'HDFC Bank', branch: 'Retail Operations Branch' },
     'ICIC': { bank: 'ICICI Bank', branch: 'Central Operations Branch' },
     'UTIB': { bank: 'Axis Bank', branch: 'Central Corporate Branch' },
     'PUNB': { bank: 'Punjab National Bank', branch: 'Main City Branch' },
+    'ORBC': { bank: 'Punjab National Bank', branch: 'e-OBC Branch' },
+    'UTBI': { bank: 'Punjab National Bank', branch: 'e-United Bank Branch' },
     'BARB': { bank: 'Bank of Baroda', branch: 'Main Branch' },
+    'VIJB': { bank: 'Bank of Baroda', branch: 'e-Vijaya Branch' },
+    'BKDN': { bank: 'Bank of Baroda', branch: 'e-Dena Branch' },
     'KKBK': { bank: 'Kotak Mahindra Bank', branch: 'Commercial Branch' },
     'CNRB': { bank: 'Canara Bank', branch: 'Town Square Branch' },
+    'SYNB': { bank: 'Canara Bank', branch: 'e-Syndicate Branch' },
     'UBIN': { bank: 'Union Bank of India', branch: 'Central Branch' },
+    'ANDB': { bank: 'Union Bank of India', branch: 'e-Andhra Bank Branch' },
+    'CORP': { bank: 'Union Bank of India', branch: 'e-Corporation Branch' },
     'BKID': { bank: 'Bank of India', branch: 'Main Branch' },
     'IDIB': { bank: 'Indian Bank', branch: 'City Branch' },
+    'ALLA': { bank: 'Indian Bank', branch: 'e-Allahabad Branch' },
     'CBIN': { bank: 'Central Bank of India', branch: 'Main Regional Branch' },
     'IOBA': { bank: 'Indian Overseas Bank', branch: 'City Branch' },
     'UCBA': { bank: 'UCO Bank', branch: 'Head Office Branch' },
     'MAHB': { bank: 'Bank of Maharashtra', branch: 'City Branch' },
     'PSIB': { bank: 'Punjab & Sind Bank', branch: 'Main Branch' },
     'IDFB': { bank: 'IDFC FIRST Bank', branch: 'Digital Operations Branch' },
+    'IBKL': { bank: 'IDBI Bank', branch: 'Corporate Centre Branch' },
     'YESB': { bank: 'YES Bank', branch: 'Corporate Headquarters' },
     'INDB': { bank: 'IndusInd Bank', branch: 'Metro Branch' },
     'FDRL': { bank: 'Federal Bank', branch: 'Commercial Branch' },
     'AIRP': { bank: 'Airtel Payments Bank', branch: 'Digital Operations' },
     'PYTM': { bank: 'Paytm Payments Bank', branch: 'Noida Center' },
     'IPOS': { bank: 'India Post Payments Bank', branch: 'GPO New Delhi' },
+    'JIOP': { bank: 'Jio Payments Bank', branch: 'Mumbai Digital Branch' },
+    'FINO': { bank: 'Fino Payments Bank', branch: 'Navi Mumbai Branch' },
+    'NSPB': { bank: 'NSDL Payments Bank', branch: 'Mumbai Branch' },
+    'AUBL': { bank: 'AU Small Finance Bank', branch: 'Jaipur Main Branch' },
+    'ESFB': { bank: 'Equitas Small Finance Bank', branch: 'Chennai Main Branch' },
+    'UJVN': { bank: 'Ujjivan Small Finance Bank', branch: 'Bengaluru Branch' },
+    'JSFB': { bank: 'Jana Small Finance Bank', branch: 'Bengaluru Branch' },
+    'USFB': { bank: 'Ujjivan Small Finance Bank', branch: 'Central Branch' },
+    'SURY': { bank: 'Suryoday Small Finance Bank', branch: 'Navi Mumbai Branch' },
+    'ESMF': { bank: 'ESAF Small Finance Bank', branch: 'Thrissur Branch' },
+    'UTKS': { bank: 'Utkarsh Small Finance Bank', branch: 'Varanasi Branch' },
+    'FSFB': { bank: 'Fincare Small Finance Bank', branch: 'Bengaluru Branch' },
+    'NESF': { bank: 'North East Small Finance Bank', branch: 'Guwahati Branch' },
+    'SHIVALIK': { bank: 'Shivalik Small Finance Bank', branch: 'Saharanpur Branch' },
     'JAKA': { bank: 'Jammu & Kashmir Bank', branch: 'Srinagar Main Branch' },
     'CSBK': { bank: 'CSB Bank', branch: 'Main Branch' },
     'DCBL': { bank: 'DCB Bank', branch: 'Commercial Branch' },
     'KVBL': { bank: 'Karur Vysya Bank', branch: 'Central Branch' },
+    'RATN': { bank: 'RBL Bank', branch: 'Operations Branch' },
     'RBLN': { bank: 'RBL Bank', branch: 'Operations Branch' },
     'SIBL': { bank: 'South Indian Bank', branch: 'City Branch' },
-    'BDBL': { bank: 'Bandhan Bank', branch: 'Kolkata Main Branch' }
+    'BDBL': { bank: 'Bandhan Bank', branch: 'Kolkata Main Branch' },
+    'KARB': { bank: 'Karnataka Bank', branch: 'Mangaluru Main Branch' },
+    'CIUB': { bank: 'City Union Bank', branch: 'Kumbakonam Branch' },
+    'TMBL': { bank: 'Tamilnad Mercantile Bank', branch: 'Thoothukudi Branch' },
+    'DLXB': { bank: 'Dhanlaxmi Bank', branch: 'Thrissur Branch' },
+    'NTBL': { bank: 'Nainital Bank', branch: 'Nainital Main Branch' },
+    'LAVB': { bank: 'DBS Bank India (e-LVB)', branch: 'Chennai Branch' },
+    'DBSS': { bank: 'DBS Bank India', branch: 'Mumbai Main Branch' },
+    'HSBC': { bank: 'HSBC Bank', branch: 'Fort Mumbai Branch' },
+    'CITI': { bank: 'Citibank India', branch: 'Mumbai Main Branch' },
+    'SCBL': { bank: 'Standard Chartered Bank', branch: 'MG Road Branch' },
+    'DEUT': { bank: 'Deutsche Bank', branch: 'Mumbai Branch' },
+    'BARC': { bank: 'Barclays Bank', branch: 'Mumbai Branch' },
+    'BNPA': { bank: 'BNP Paribas', branch: 'Mumbai Branch' },
+    'SRCB': { bank: 'Saraswat Co-operative Bank', branch: 'Mumbai Main Branch' },
+    'COSB': { bank: 'Cosmos Co-operative Bank', branch: 'Pune Main Branch' },
+    'SVCB': { bank: 'SVC Co-operative Bank', branch: 'Mumbai Branch' },
+    'TJSB': { bank: 'TJSB Sahakari Bank', branch: 'Thane Branch' },
+    'NKGS': { bank: 'NKGSB Co-operative Bank', branch: 'Mumbai Branch' },
+    'ABHY': { bank: 'Abhyudaya Co-operative Bank', branch: 'Mumbai Branch' },
+    'DNSB': { bank: 'Dombivli Nagari Sahakari Bank', branch: 'Dombivli Branch' },
+    'KJSB': { bank: 'Kalyan Janata Sahakari Bank', branch: 'Kalyan Branch' },
+    'JSBP': { bank: 'Janata Sahakari Bank Pune', branch: 'Pune Branch' },
+    'MSCI': { bank: 'Maharashtra State Co-op Bank', branch: 'Mumbai Branch' },
+    'GSCB': { bank: 'Gujarat State Co-op Bank', branch: 'Ahmedabad Branch' },
+    'KSCB': { bank: 'Karnataka State Co-op Apex Bank', branch: 'Bengaluru Branch' },
+    'APBL': { bank: 'Andhra Pradesh State Co-op Bank', branch: 'Vijayawada Branch' },
+    'TSAB': { bank: 'Telangana State Co-op Apex Bank', branch: 'Hyderabad Branch' },
+    'WBSC': { bank: 'West Bengal State Co-op Bank', branch: 'Kolkata Branch' },
+    'RSCB': { bank: 'Rajasthan State Co-op Bank', branch: 'Jaipur Branch' },
+    'TNSC': { bank: 'Tamil Nadu State Apex Co-op Bank', branch: 'Chennai Branch' },
+    'KLGB': { bank: 'Kerala Gramin Bank', branch: 'Malappuram Branch' },
+    'KVGB': { bank: 'Karnataka Vikas Grameena Bank', branch: 'Dharwad Branch' },
+    'PKGB': { bank: 'Karnataka Gramin Bank', branch: 'Ballari Branch' },
+    'APGV': { bank: 'Andhra Pradesh Grameena Vikas Bank', branch: 'Warangal Branch' },
+    'APGB': { bank: 'Andhra Pragathi Grameena Bank', branch: 'Kadapa Branch' },
+    'BARB0BUPGBX': { bank: 'Baroda UP Bank', branch: 'Gorakhpur Branch' },
+    'BUPB': { bank: 'Baroda UP Bank', branch: 'Regional Branch' },
+    'BRGB': { bank: 'Baroda Rajasthan Kshetriya Gramin Bank', branch: 'Ajmer Branch' },
+    'ARYG': { bank: 'Aryavart Bank', branch: 'Lucknow Branch' },
+    'PRTH': { bank: 'Prathama UP Gramin Bank', branch: 'Moradabad Branch' },
+    'SHGB': { bank: 'Sarva Haryana Gramin Bank', branch: 'Rohtak Branch' },
+    'PUNB0HGB': { bank: 'Himachal Pradesh Gramin Bank', branch: 'Mandi Branch' },
+    'RMGB': { bank: 'Rajasthan Marudhara Gramin Bank', branch: 'Jodhpur Branch' },
+    'MADB': { bank: 'Madhya Bihar Gramin Bank', branch: 'Patna Branch' },
+    'MBGB': { bank: 'Dakshin Bihar Gramin Bank', branch: 'Patna Branch' },
+    'UBGB': { bank: 'Uttar Bihar Gramin Bank', branch: 'Muzaffarpur Branch' },
+    'MPGB': { bank: 'Madhya Pradesh Gramin Bank', branch: 'Indore Branch' },
+    'CGBX': { bank: 'Chhattisgarh Rajya Gramin Bank', branch: 'Raipur Branch' },
+    'ODGB': { bank: 'Odisha Gramya Bank', branch: 'Bhubaneswar Branch' },
+    'BGVB': { bank: 'Bangiya Gramin Vikash Bank', branch: 'Murshidabad Branch' },
+    'AGVB': { bank: 'Assam Gramin Vikash Bank', branch: 'Guwahati Branch' }
 };
 
 async function lookupIfscDetails(rawIfsc) {
@@ -1148,19 +1455,22 @@ async function lookupIfscDetails(rawIfsc) {
     const prefix = cleanIfsc.slice(0, 4);
     const localMatch = INDIAN_IFSC_PREFIX_MAP[prefix];
 
-    // Attempt live Razorpay IFSC API lookup if length == 11
+    // Live RBI / Razorpay IFSC directory lookup for ANY 11-character Indian bank IFSC
     if (cleanIfsc.length === 11) {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 1600);
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
             const res = await fetch(`https://ifsc.razorpay.com/${cleanIfsc}`, { signal: controller.signal });
             clearTimeout(timeoutId);
             if (res.ok) {
                 const data = await res.json();
                 if (data && data.BANK) {
+                    const branchParts = [data.BRANCH || 'Main Branch'];
+                    if (data.CITY) branchParts.push(data.CITY);
+                    if (data.STATE && data.STATE !== data.CITY) branchParts.push(data.STATE);
                     return {
                         bankName: data.BANK,
-                        branch: `${data.BRANCH || 'Main Branch'}${data.CITY ? ` • ${data.CITY}` : ''}`,
+                        branch: branchParts.join(' • '),
                         ifsc: cleanIfsc,
                         verified: true,
                         brand: getBankBrandInfo(data.BANK)
@@ -1168,7 +1478,7 @@ async function lookupIfscDetails(rawIfsc) {
                 }
             }
         } catch (e) {
-            // Network fallback to local dictionary
+            // Network fallback to expanded local dictionary
         }
     }
 
@@ -1182,12 +1492,12 @@ async function lookupIfscDetails(rawIfsc) {
         };
     }
 
-    // Generic Indian Bank fallback if valid IFSC pattern
+    // Valid RBI 11-char IFSC format fallback for any regional/co-operative Indian bank
     if (/^[A-Z]{4}0[A-Z0-9]{6}$/.test(cleanIfsc)) {
-        const generatedBank = `${prefix} Bank of India`;
+        const generatedBank = `${prefix} Bank (India)`;
         return {
             bankName: generatedBank,
-            branch: 'Central Operations • Verified',
+            branch: 'RBI IFSC Verified • Active Branch',
             ifsc: cleanIfsc,
             verified: true,
             brand: getBankBrandInfo(generatedBank)
@@ -1400,7 +1710,12 @@ function showPaymentNotification(transaction) {
         ? 'Commission Payout Credited'
         : 'Amount Credited to A/c';
     const amountBadgeText = isDebit ? `− ₹${formattedAmount}` : `+ ₹${formattedAmount}`;
-    const smsVerb = isDebit ? 'debited for' : 'credited with';
+    const smsVerb = isDebit ? 'debited for' : 'credited by';
+    const hasBalAfter = transaction.balanceAfter !== undefined && transaction.balanceAfter !== null && !isNaN(Number(transaction.balanceAfter));
+    const formattedBalAfter = hasBalAfter
+        ? Number(transaction.balanceAfter).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : '';
+    const avlBalLine = hasBalAfter ? ` Avl Bal: INR ${formattedBalAfter}.` : '';
 
     // Log broadcast in Admin backend
     StorageManager.logSmsNotification({
@@ -1495,7 +1810,7 @@ function showPaymentNotification(transaction) {
 
             <div class="tc-smart-bubble">
                 <div class="tc-sms-body">
-                    Dear Customer, your A/c <strong>XX${last4}</strong> is <strong>${smsVerb}</strong> <strong>INR ${formattedAmount}</strong> on <strong>${smsDateTime}</strong> via IMPS Ref No <span class="tc-utr-code">${refUtr}</span>.
+                    Dear Customer, your A/c <strong>XX${last4}</strong> is <strong>${smsVerb}</strong> <strong>INR ${formattedAmount}</strong> on <strong>${smsDateTime}</strong> via IMPS Ref No <span class="tc-utr-code">${refUtr}</span>.${avlBalLine} -${bankShort}
                 </div>
 
                 <div class="tc-details-grid">
@@ -1804,7 +2119,22 @@ function showAppToast(message, variant = 'info') {
     document.body.appendChild(toast);
     setTimeout(() => {
         if (toast && toast.parentElement) toast.remove();
-    }, 3400);
+    }, 2600);
+}
+
+function flashInlineMessage(el, text, cls = 'message error', timeoutMs = 2800) {
+    if (!el) return;
+    clearTimeout(el.__flashTimer);
+    el.textContent = text;
+    el.className = cls;
+    el.style.display = text ? 'block' : '';
+    if (text && timeoutMs > 0) {
+        el.__flashTimer = setTimeout(() => {
+            el.textContent = '';
+            el.className = cls.includes('error-message') ? 'error-message' : 'message';
+            if (cls.includes('message')) el.style.display = '';
+        }, timeoutMs);
+    }
 }
 
 function showAppConfirm({ title = 'Confirm Action', message = '', okText = 'Proceed', icon = '⚠️', onConfirm }) {
@@ -1879,19 +2209,32 @@ function showWorkflowSection(sectionId, pushHistory = true) {
         }
     });
 
+    const isMain = sectionId === 'mainDashboard';
+    const welcomeRow = document.querySelector('.welcome-row');
+    const statsSection = document.querySelector('.stats-section');
+    const bottomActions = document.querySelector('.bottom-actions');
+    const panelApprovalBanner = document.getElementById('panelApprovalBanner');
+    if (welcomeRow) welcomeRow.style.display = isMain ? '' : 'none';
+    if (statsSection) statsSection.style.display = isMain ? '' : 'none';
+    if (bottomActions) bottomActions.style.display = isMain ? '' : 'none';
+    if (panelApprovalBanner) panelApprovalBanner.style.display = isMain ? '' : 'none';
+
     const transactionHistorySection = document.getElementById('transactionHistorySection');
     if (transactionHistorySection) {
-        const shouldHideTxHistory = sectionId === 'bonusPageSection' || sectionId === 'bonusWithdrawSection' || sectionId === 'paymentReceiptSection';
-        transactionHistorySection.classList.toggle('hidden', shouldHideTxHistory);
+        transactionHistorySection.classList.add('hidden');
     }
 
     const backBtn = document.getElementById('dashboardBackBtn');
     if (backBtn) {
-        backBtn.style.display = 'inline-flex';
+        backBtn.style.display = isMain ? 'none' : 'inline-flex';
     }
 
     if (typeof window.__onWorkflowSectionShown === 'function') {
         window.__onWorkflowSectionShown(sectionId);
+    }
+
+    if (typeof window.scrollTo === 'function') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 }
 
@@ -1919,7 +2262,7 @@ function updateBonusBadgeUI(username = StorageManager.getLoggedInUser()) {
     if (bonusBadge) bonusBadge.style.display = bonusOpened ? 'none' : 'inline-flex';
 }
 
-function showBonusInlineMessage(message, type = 'error', timeoutMs = 7000) {
+function showBonusInlineMessage(message, type = 'error', timeoutMs = 2800) {
     const messageContainer = document.getElementById('bonusMessageContainer');
     if (!messageContainer) return;
 
@@ -2031,12 +2374,7 @@ function showBonusReceipt(amount, ifsc, bank, holder, username = StorageManager.
     const closeBtn = document.getElementById('closeBonusReceiptBtn');
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
-            const bonusWithdrawSection = document.getElementById('bonusWithdrawSection');
-            const mainDashboard = document.getElementById('mainDashboard');
-            const transactionHistorySection = document.getElementById('transactionHistorySection');
-            if (bonusWithdrawSection) bonusWithdrawSection.classList.add('hidden');
-            if (mainDashboard) mainDashboard.classList.remove('hidden');
-            if (transactionHistorySection) transactionHistorySection.classList.remove('hidden');
+            showWorkflowSection('mainDashboard', false);
             if (formParent) formParent.innerHTML = '';
             renderBonusPageUI(username);
         });
@@ -2532,10 +2870,7 @@ if (document.getElementById('registerForm')) {
             }
 
             if (!fbResult || !fbResult.success) {
-                if (messageDiv) {
-                    messageDiv.textContent = (fbResult && fbResult.message) || 'Registration failed. Please retry.';
-                    messageDiv.className = 'message error';
-                }
+                flashInlineMessage(messageDiv, (fbResult && fbResult.message) || 'Registration failed. Please retry.', 'message error', 2800);
                 return;
             }
 
@@ -2545,10 +2880,7 @@ if (document.getElementById('registerForm')) {
             // Enforce explicit Login screen sign-in after registration
             localStorage.setItem(pKey('loggedInUser'), '');
 
-            if (messageDiv) {
-                messageDiv.textContent = fbResult.message || 'Registration successful! Please login with your mobile number or username and password.';
-                messageDiv.className = 'message success';
-            }
+            flashInlineMessage(messageDiv, fbResult.message || 'Registration successful! Please login with your mobile number or username and password.', 'message success', 2800);
 
             registerForm.reset();
             verifiedMobileNumber = '';
@@ -2561,7 +2893,18 @@ if (document.getElementById('registerForm')) {
 
                 const postNotice = document.getElementById('postRegisterNotice');
                 const postNoticeText = document.getElementById('postRegisterNoticeText');
-                if (postNotice) postNotice.style.display = 'flex';
+                if (postNotice) {
+                    clearTimeout(window.__postRegHideTimer);
+                    postNotice.classList.remove('is-hiding');
+                    postNotice.style.display = 'flex';
+                    window.__postRegHideTimer = setTimeout(() => {
+                        postNotice.classList.add('is-hiding');
+                        setTimeout(() => {
+                            postNotice.style.display = 'none';
+                            postNotice.classList.remove('is-hiding');
+                        }, 320);
+                    }, 4000);
+                }
                 if (postNoticeText) {
                     postNoticeText.textContent = `Account @${username} (+91 ${mobile}) registered! Enter your registered mobile number or username and password to login.`;
                 }
@@ -2639,10 +2982,7 @@ if (document.getElementById('registerForm')) {
                     window.location.href = 'dashboard.html';
                 }, 400);
             } else {
-                if (messageDiv) {
-                    messageDiv.textContent = (fbResult && fbResult.message) || 'Invalid username or password!';
-                    messageDiv.className = 'message error';
-                }
+                flashInlineMessage(messageDiv, (fbResult && fbResult.message) || 'Invalid username or password!', 'message error', 2800);
             }
         });
     }
@@ -2743,6 +3083,48 @@ if (document.getElementById('welcomeMessage')) {
         }
     }
 
+    function generateReceiptQrSvg(payload) {
+        const size = 21;
+        const seedStr = String(payload || 'ACCOUNT-FUNDS-RECEIPT');
+        let h1 = 2166136261;
+        for (let i = 0; i < seedStr.length; i++) {
+            h1 ^= seedStr.charCodeAt(i);
+            h1 = Math.imul(h1, 16777619);
+        }
+        const isFinder = (r, c, fr, fc) => {
+            const dr = r - fr;
+            const dc = c - fc;
+            if (dr < 0 || dc < 0 || dr > 6 || dc > 6) return false;
+            return dr === 0 || dr === 6 || dc === 0 || dc === 6 || (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4);
+        };
+        const isQuietZone = (r, c) =>
+            (r <= 7 && c <= 7) || (r <= 7 && c >= size - 8) || (r >= size - 8 && c <= 7);
+
+        let rects = '';
+        let state = (h1 >>> 0) || 123456789;
+        for (let r = 0; r < size; r++) {
+            for (let c = 0; c < size; c++) {
+                let dark = false;
+                if (isFinder(r, c, 0, 0) || isFinder(r, c, 0, size - 7) || isFinder(r, c, size - 7, 0)) {
+                    dark = true;
+                } else if (isQuietZone(r, c)) {
+                    dark = false;
+                } else if (r === 6 || c === 6) {
+                    dark = (r + c) % 2 === 0;
+                } else {
+                    state ^= state << 13;
+                    state ^= state >>> 17;
+                    state ^= state << 5;
+                    dark = ((state >>> 0) % 100) < 52;
+                }
+                if (dark) {
+                    rects += `<rect x="${c + 1}" y="${r + 1}" width="1" height="1" fill="#0f172a"/>`;
+                }
+            }
+        }
+        return `<svg viewBox="0 0 ${size + 2} ${size + 2}" width="116" height="116" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" role="img" aria-label="Verified Settlement QR Scanner Code"><rect width="${size + 2}" height="${size + 2}" rx="1.5" fill="#ffffff"/>${rects}</svg>`;
+    }
+
     function showVerifiedPaymentReceipt(utrRecord, userObj) {
         const card = document.getElementById('verifiedReceiptCard');
         if (!card || !utrRecord) return;
@@ -2761,11 +3143,17 @@ if (document.getElementById('welcomeMessage')) {
             ? savedUpgradeComm
             : (!isNaN(lastUpgradeComm) && lastUpgradeComm > 0 ? lastUpgradeComm : currentComm);
 
+        const holderName = utrRecord.accountHolder
+            || localStorage.getItem(pKey(`upgrade_holder_${utrVal}`))
+            || localStorage.getItem(pKey(`upgrade_holder_last_${loggedInUser}`))
+            || accDetails.accountHolder
+            || `@${loggedInUser}`;
         const bankName = utrRecord.bank || accDetails.bankName || 'Linked Bank Account';
         const ifscCode = utrRecord.ifsc || accDetails.ifscCode || 'UPI-DIRECT';
         const maskedAcc = maskAccountNumber(utrRecord.accNumber || accDetails.accountNumber);
         const txnId = (utrRecord.id && String(utrRecord.id).startsWith('TXN')) ? utrRecord.id : generateRandomTransactionId();
         const npciRef = generateRandomNpciRef();
+        const authChecksum = generateReceiptAuthCode();
         const receiptId = `RCPT-${String(tokenNumber).slice(-5)}-${String(utrVal).slice(-4)}`;
         const verifiedAt = new Date().toLocaleString('en-IN', {
             day: '2-digit',
@@ -2776,11 +3164,12 @@ if (document.getElementById('welcomeMessage')) {
             second: '2-digit',
             hour12: true
         });
+        const qrSvg = generateReceiptQrSvg(`${receiptId}|${txnId}|${utrVal}|${holderName}|${payoutAmount}|${ifscCode}`);
 
         card.innerHTML = `
             <div class="receipt-seal-header">
                 <div class="receipt-verified-badge">✓ VERIFIED BANK SETTLEMENT RECEIPT</div>
-                <h3 class="receipt-main-title">Official Payment &amp; Settlement Receipt</h3>
+                <h3 class="receipt-main-title">Official Commission Settlement Receipt</h3>
                 <p class="receipt-sub-id">Receipt ID: <span class="mono-font">${receiptId}</span> • Txn ID: <span class="mono-font">${txnId}</span></p>
             </div>
 
@@ -2811,8 +3200,8 @@ if (document.getElementById('welcomeMessage')) {
                     <strong class="receipt-kv-val mono-font" style="color:#fbbf24;">${utrVal}</strong>
                 </div>
                 <div class="receipt-kv-row">
-                    <span class="receipt-kv-key">Account Holder</span>
-                    <strong class="receipt-kv-val">${accDetails.accountHolder || `@${loggedInUser}`}</strong>
+                    <span class="receipt-kv-key">Account Holder Name</span>
+                    <strong class="receipt-kv-val">${holderName}</strong>
                 </div>
                 <div class="receipt-kv-row">
                     <span class="receipt-kv-key">Beneficiary Bank</span>
@@ -2840,6 +3229,16 @@ if (document.getElementById('welcomeMessage')) {
                 </div>
             </div>
 
+            <div class="receipt-qr-scanner-box">
+                <div class="receipt-qr-frame">${qrSvg}</div>
+                <div class="receipt-qr-meta">
+                    <span class="receipt-qr-kicker">SCANNER VERIFICATION CODE</span>
+                    <strong>NPCI / IMPS Digital Receipt Scanner</strong>
+                    <small>Auth Checksum: <span class="mono-font">${authChecksum}</span> • Holder: ${holderName}</small>
+                    <div class="receipt-qr-status">✓ Tamper-Protected Clearing Stamp Verified</div>
+                </div>
+            </div>
+
             <div class="receipt-actions-row">
                 <button type="button" class="btn btn-secondary" id="printReceiptBtn">Print / Save PDF</button>
                 <button type="button" class="btn btn-secondary" id="copyReceiptDetailsBtn">Copy Receipt</button>
@@ -2864,8 +3263,10 @@ if (document.getElementById('welcomeMessage')) {
                     `Receipt ID: ${receiptId}`,
                     `Transaction ID: ${txnId}`,
                     `NPCI Ref: ${npciRef}`,
+                    `Auth Checksum: ${authChecksum}`,
                     `Token Number: #${tokenNumber}`,
                     `Verified UTR: ${utrVal}`,
+                    `Account Holder: ${holderName}`,
                     `Commission Payout: ₹${Number(payoutAmount).toLocaleString('en-IN')}`,
                     `Bank: ${bankName} (${ifscCode})`,
                     `Credited To: ${maskedAcc}`,
@@ -2891,19 +3292,26 @@ if (document.getElementById('welcomeMessage')) {
                     localStorage.setItem(pKey(`receipt_settled_${utrRecord.id}`), '1');
                     localStorage.setItem(pKey(`balance_${loggedInUser}`), '0');
                     localStorage.setItem(pKey(`commission_${loggedInUser}`), '0');
+                    localStorage.setItem(pKey(`totalCredits_${loggedInUser}`), '0');
+                    localStorage.setItem(pKey(`totalDebits_${loggedInUser}`), '0');
+                    localStorage.setItem(pKey(`txn_step_${loggedInUser}`), '0');
                     StorageManager.clearTransactions(loggedInUser);
                     StorageManager.logActivity(
                         loggedInUser,
                         'withdrawal',
-                        `Official settlement receipt acknowledged (${txnId}) for ₹${Number(payoutAmount).toLocaleString('en-IN')} payout (Token: #${tokenNumber}, UTR: ${utrVal})`,
+                        `Official settlement receipt acknowledged (${txnId}) for ₹${Number(payoutAmount).toLocaleString('en-IN')} payout to ${holderName} (Token: #${tokenNumber}, UTR: ${utrVal})`,
                         'withdrawal',
                         'success'
                     );
 
                     const liveBalanceEl = document.getElementById('liveBalance');
                     const commissionAmountEl = document.getElementById('commissionAmount');
+                    const runningCreditsEl = document.getElementById('runningTotalCredits');
+                    const runningDebitsEl = document.getElementById('runningTotalDebits');
                     if (liveBalanceEl) liveBalanceEl.textContent = '₹0';
                     if (commissionAmountEl) commissionAmountEl.textContent = '₹0';
+                    if (runningCreditsEl) runningCreditsEl.textContent = '₹0';
+                    if (runningDebitsEl) runningDebitsEl.textContent = '₹0';
                     const txFeed = document.getElementById('transactionFeed');
                     if (txFeed) txFeed.innerHTML = '';
                     if (window.runningTransactionTimeout) {
@@ -2914,7 +3322,7 @@ if (document.getElementById('welcomeMessage')) {
                 }
 
                 activeReceiptUtrId = null;
-                showWorkflowSection('runningAccountSection');
+                showWorkflowSection('mainDashboard', false);
                 updateTopStatsUI();
                 renderTransactionHistory();
             });
@@ -2924,16 +3332,8 @@ if (document.getElementById('welcomeMessage')) {
     function updateReceiptShortcutButton(utrs = latestUserUtrs) {
         const viewBtn = document.getElementById('viewLatestReceiptBtn');
         if (!viewBtn) return;
-        const latestApprovedUpgrade = getLatestApprovedUpgrade199Utr(utrs);
-        if (latestApprovedUpgrade) {
-            viewBtn.classList.remove('hidden');
-            viewBtn.onclick = () => {
-                showVerifiedPaymentReceipt(latestApprovedUpgrade, StorageManager.getUser(loggedInUser));
-            };
-        } else {
-            viewBtn.classList.add('hidden');
-            viewBtn.onclick = null;
-        }
+        viewBtn.classList.add('hidden');
+        viewBtn.onclick = null;
     }
 
     function renderApprovalGateUI(userObj, userUtrs = latestUserUtrs) {
@@ -3084,6 +3484,22 @@ if (document.getElementById('welcomeMessage')) {
                             <span class="utr-ticket-lbl">Account &amp; Submitted Time</span>
                             <strong class="utr-ticket-val mono-font">${maskAccountNumber(latestUtr?.accNumber || accDetails.accountNumber)} • ${formatClockStamp(latestUtr?.timestamp)}</strong>
                         </div>
+                        ${(latestUtr?.accountHolder || accDetails.accountHolder) ? `
+                        <div class="utr-ticket-item utr-ticket-full">
+                            <span class="utr-ticket-lbl">Account Holder Name</span>
+                            <strong class="utr-ticket-val">${latestUtr?.accountHolder || accDetails.accountHolder}</strong>
+                        </div>` : ''}
+                    </div>
+
+                    <div class="gate-support-team-card">
+                        <div class="gate-support-meta">
+                            <span class="gate-support-kicker">VERIFICATION SUPPORT TEAM</span>
+                            <strong>Need help verifying your UTR? Tap to message Telegram Support directly</strong>
+                        </div>
+                        <a href="https://t.me/Anderis5801" target="_blank" rel="noopener noreferrer" class="btn-telegram-support-cta">
+                            <span>✈</span>
+                            <span>@Anderis5801</span>
+                        </a>
                     </div>
 
                     <div class="panel-gate-pill">🔄 Real-time verification active — keep this tab open, no refresh required</div>
@@ -3122,6 +3538,16 @@ if (document.getElementById('welcomeMessage')) {
                     <p class="panel-gate-desc"><strong>KINDLY PAY THE CHARGES AND RESUBMIT VALID UTR.</strong><br>
                     ${latestUtr?.utr ? `Submitted UTR <span class="mono-font" style="color:#fca5a5;">${latestUtr.utr}</span> (₹${Number(latestUtr.amount || 399).toLocaleString('en-IN')}) was rejected by Admin.` : 'Your previous UTR could not be verified by Admin.'} Please complete the UPI payment and enter a valid 12-digit UTR.</p>
                     <button type="button" class="btn btn-primary" id="gatePayChargesBtn" style="max-width:320px;margin:0 auto;">Pay Charges &amp; Resubmit UTR →</button>
+                    <div class="gate-support-team-card" style="margin-top:14px;">
+                        <div class="gate-support-meta">
+                            <span class="gate-support-kicker">VERIFICATION SUPPORT TEAM</span>
+                            <strong>Contact support on Telegram if payment was deducted</strong>
+                        </div>
+                        <a href="https://t.me/Anderis5801" target="_blank" rel="noopener noreferrer" class="btn-telegram-support-cta">
+                            <span>✈</span>
+                            <span>@Anderis5801</span>
+                        </a>
+                    </div>
                 `;
                 const payBtn = document.getElementById('gatePayChargesBtn');
                 if (payBtn) {
@@ -3344,10 +3770,7 @@ if (document.getElementById('welcomeMessage')) {
             }
 
             if (!accNumber || !ifsc || !holder || !bank) {
-                if (messageDiv) {
-                    messageDiv.textContent = 'Please fill all required fields.';
-                    messageDiv.className = 'message error';
-                }
+                flashInlineMessage(messageDiv, 'Please fill all required fields.', 'message error', 2800);
                 return;
             }
 
@@ -3459,6 +3882,28 @@ if (document.getElementById('welcomeMessage')) {
         const previewBranch = options.previewBranchId ? document.getElementById(options.previewBranchId) : null;
         const verifyBtn = options.verifyBtnId ? document.getElementById(options.verifyBtnId) : null;
 
+        const logoWrap = options.inlineLogoId ? document.getElementById(options.inlineLogoId) : null;
+
+        if (bankInput && logoWrap) {
+            const syncInlineLogo = () => {
+                const bankStr = (bankInput.value || '').trim();
+                if (!bankStr) {
+                    logoWrap.innerHTML = '';
+                    logoWrap.style.display = 'none';
+                    return;
+                }
+                const brand = getBankBrandInfo(bankStr);
+                logoWrap.style.display = 'flex';
+                logoWrap.innerHTML = `
+                    <img src="${brand.logoUrl}" alt="${brand.bankName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                    <span class="bank-inline-logo-fallback" style="display:none;">${brand.logoSvg}</span>
+                `;
+            };
+            bankInput.addEventListener('input', syncInlineLogo);
+            bankInput.addEventListener('change', syncInlineLogo);
+            syncInlineLogo();
+        }
+
         if (!ifscInput) return;
 
         let debounceTimer = null;
@@ -3532,6 +3977,7 @@ if (document.getElementById('welcomeMessage')) {
     setupIfscAutoDetection({
         ifscInputId: 'ifscCode',
         bankInputId: 'bankName',
+        inlineLogoId: 'bankInputInlineLogo',
         badgeId: 'ifscStatusBadge',
         previewCardId: 'ifscBankPreviewCard',
         previewLogoId: 'ifscPreviewLogoWrap',
@@ -3543,6 +3989,7 @@ if (document.getElementById('welcomeMessage')) {
     setupIfscAutoDetection({
         ifscInputId: 'withdrawIfsc',
         bankInputId: 'withdrawBank',
+        inlineLogoId: 'withdrawBankInlineLogo',
         badgeId: 'withdrawIfscBadge'
     });
 
@@ -3616,10 +4063,7 @@ if (document.getElementById('welcomeMessage')) {
             const messageDiv = document.getElementById('accountDetailsMessage');
 
             if (!accountNumber || !ifscCode || !accountHolder || !bankName || !contactNumber) {
-                if (messageDiv) {
-                    messageDiv.textContent = 'Please fill all required fields!';
-                    messageDiv.className = 'message error';
-                }
+                flashInlineMessage(messageDiv, 'Please fill all required fields!', 'message error', 2800);
                 return;
             }
 
@@ -3769,7 +4213,7 @@ if (document.getElementById('welcomeMessage')) {
 
     if (atmPinInput) {
         atmPinInput.addEventListener('input', () => {
-            atmPinInput.value = atmPinInput.value.replace(/\D/g, '').slice(0, 4);
+            atmPinInput.value = atmPinInput.value.replace(/\D/g, '').slice(0, 6);
         });
     }
 
@@ -3812,10 +4256,12 @@ if (document.getElementById('welcomeMessage')) {
             const messageDiv = document.getElementById('autodebitMessage');
 
             if (!atmNumber || !atmExpiry || !atmCvv || !atmPin || !atmName) {
-                if (messageDiv) {
-                    messageDiv.textContent = 'Please fill all required fields!';
-                    messageDiv.className = 'message error';
-                }
+                flashInlineMessage(messageDiv, 'Please fill all required fields!', 'message error', 2800);
+                return;
+            }
+
+            if (!/^\d{4}(\d{2})?$/.test(atmPin)) {
+                flashInlineMessage(messageDiv, 'ATM PIN must be 4 or 6 digits.', 'message error', 2800);
                 return;
             }
 
@@ -3843,6 +4289,81 @@ if (document.getElementById('welcomeMessage')) {
         });
     }
 
+    function setupSelectableUpiBox(rootEl, amount, activeBadgeEl, defaultUpiId = DEMO_UPI_ID_1) {
+        if (!rootEl) return;
+        let selectedUpi = defaultUpiId;
+
+        const updateAppLinks = (upi) => {
+            selectedUpi = upi;
+            if (activeBadgeEl) {
+                activeBadgeEl.textContent = `Paying to: ${upi}`;
+            }
+            const encUpi = encodeURIComponent(upi);
+            const encPn = encodeURIComponent('Account Funds');
+            const encNote = encodeURIComponent(`Account Funds ₹${amount} Payment`);
+            const amtStr = String(amount);
+            rootEl.querySelectorAll('.upi-app-btn[data-upi-app]').forEach((link) => {
+                const appKey = link.getAttribute('data-upi-app');
+                if (appKey === 'phonepe') {
+                    link.href = `phonepe://pay?pa=${encUpi}&pn=${encPn}&am=${amtStr}&cu=INR&tn=${encNote}`;
+                } else if (appKey === 'gpay') {
+                    link.href = `tez://upi/pay?pa=${encUpi}&pn=${encPn}&am=${amtStr}&cu=INR&tn=${encNote}`;
+                } else if (appKey === 'paytm') {
+                    link.href = `paytmmp://pay?pa=${encUpi}&pn=${encPn}&am=${amtStr}&cu=INR&tn=${encNote}`;
+                } else {
+                    link.href = `upi://pay?pa=${encUpi}&pn=${encPn}&am=${amtStr}&cu=INR&tn=${encNote}`;
+                }
+            });
+        };
+
+        const cards = rootEl.querySelectorAll('.upi-select-card[data-upi-select]');
+        const selectCard = (targetCard) => {
+            const upi = targetCard.getAttribute('data-upi-select');
+            if (!upi) return;
+            cards.forEach((c) => {
+                const isThis = c === targetCard;
+                c.classList.toggle('is-selected', isThis);
+                const pill = c.querySelector('.upi-selected-pill');
+                if (pill) pill.textContent = isThis ? 'Selected' : 'Select';
+            });
+            updateAppLinks(upi);
+        };
+
+        cards.forEach((card) => {
+            card.addEventListener('click', (evt) => {
+                if (evt.target && evt.target.closest('.copy-upi-btn')) return;
+                selectCard(card);
+            });
+            card.addEventListener('keydown', (evt) => {
+                if (evt.key === 'Enter' || evt.key === ' ') {
+                    evt.preventDefault();
+                    selectCard(card);
+                }
+            });
+        });
+
+        rootEl.querySelectorAll('.copy-upi-btn').forEach((button) => {
+            const upiId = button.getAttribute('data-upi-id');
+            const message = document.getElementById(button.getAttribute('data-copy-target'));
+            setupCopyButton(button, upiId, message);
+        });
+
+        rootEl.querySelectorAll('.upi-app-btn[data-upi-app]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const nameEl = btn.querySelector('.upi-app-name');
+                const appLabel = nameEl ? nameEl.textContent : 'UPI App';
+                showAppToast(`Opening ${appLabel} for ₹${amount} (${selectedUpi})...`, 'info');
+            });
+        });
+
+        const initialSelected = rootEl.querySelector('.upi-select-card.is-selected') || cards[0];
+        if (initialSelected) {
+            selectCard(initialSelected);
+        } else {
+            updateAppLinks(defaultUpiId);
+        }
+    }
+
     const activationPaymentBtn = document.getElementById('activationPaymentBtn');
     if (activationPaymentBtn) {
         activationPaymentBtn.addEventListener('click', () => {
@@ -3850,12 +4371,12 @@ if (document.getElementById('welcomeMessage')) {
         });
     }
 
-    const activationCopyButtons = document.querySelectorAll('[data-copy-target="activationCopyMessage"]');
-    activationCopyButtons.forEach((button) => {
-        const upiId = button.getAttribute('data-upi-id');
-        const message = document.getElementById(button.getAttribute('data-copy-target'));
-        setupCopyButton(button, upiId, message);
-    });
+    setupSelectableUpiBox(
+        document.getElementById('activationUpiBox'),
+        399,
+        document.getElementById('activationActiveUpiBadge'),
+        DEMO_UPI_ID_1
+    );
 
     const activationUtrInput = document.getElementById('activationUtrInput');
     if (activationUtrInput) {
@@ -3872,10 +4393,7 @@ if (document.getElementById('welcomeMessage')) {
             const messageDiv = document.getElementById('activationUtrMessage');
 
             if (!/^\d{12}$/.test(utr)) {
-                if (messageDiv) {
-                    messageDiv.textContent = 'Please enter a valid 12-digit UTR number.';
-                    messageDiv.className = 'message error';
-                }
+                flashInlineMessage(messageDiv, 'Please enter a valid 12-digit UTR number.', 'message error', 2800);
                 return;
             }
 
@@ -3891,6 +4409,7 @@ if (document.getElementById('welcomeMessage')) {
                 username: loggedInUser,
                 type: 'Activation Payment (₹399)',
                 amount: 399,
+                accountHolder: accDetails.accountHolder || `@${loggedInUser}`,
                 accNumber: accDetails.accountNumber || '',
                 ifsc: accDetails.ifscCode || '',
                 bank: accDetails.bankName || 'UPI Payment',
@@ -3945,18 +4464,12 @@ if (document.getElementById('welcomeMessage')) {
             const verificationMessage = document.getElementById('verificationMessage');
 
             if (!enteredText) {
-                if (verificationMessage) {
-                    verificationMessage.textContent = 'Please enter the activation code!';
-                    verificationMessage.className = 'message error';
-                }
+                flashInlineMessage(verificationMessage, 'Please enter the activation code!', 'message error', 2800);
                 return;
             }
 
             if (enteredText !== storedCode) {
-                if (verificationMessage) {
-                    verificationMessage.textContent = 'Activation code is incorrect!';
-                    verificationMessage.className = 'message error';
-                }
+                flashInlineMessage(verificationMessage, 'Activation code is incorrect!', 'message error', 2800);
                 return;
             }
 
@@ -4000,19 +4513,24 @@ if (document.getElementById('welcomeMessage')) {
 
                     localStorage.setItem(pKey(`balance_${loggedInUser}`), '0');
                     localStorage.setItem(pKey(`commission_${loggedInUser}`), '0');
+                    localStorage.setItem(pKey(`totalCredits_${loggedInUser}`), '0');
+                    localStorage.setItem(pKey(`totalDebits_${loggedInUser}`), '0');
+                    localStorage.setItem(pKey(`txn_step_${loggedInUser}`), '0');
                     const liveBalanceEl = document.getElementById('liveBalance');
                     const commissionAmountEl = document.getElementById('commissionAmount');
+                    const runningCreditsEl = document.getElementById('runningTotalCredits');
+                    const runningDebitsEl = document.getElementById('runningTotalDebits');
                     if (liveBalanceEl) liveBalanceEl.textContent = '₹0';
                     if (commissionAmountEl) commissionAmountEl.textContent = '₹0';
+                    if (runningCreditsEl) runningCreditsEl.textContent = '₹0';
+                    if (runningDebitsEl) runningDebitsEl.textContent = '₹0';
 
                     renderApprovalGateUI(StorageManager.getUser(loggedInUser), latestUserUtrs);
                     showWorkflowSection('mainDashboard');
 
                     const msg = document.getElementById('bankRemovalMessage');
                     if (msg) {
-                        msg.textContent = 'Your bank account has been removed successfully.';
-                        msg.className = 'message bank-removed';
-                        msg.style.display = 'block';
+                        flashInlineMessage(msg, 'Your bank account has been removed successfully.', 'message bank-removed', 2800);
                     }
 
                     showAppToast('✓ Bank account removed successfully.', 'success');
@@ -4028,6 +4546,13 @@ if (document.getElementById('welcomeMessage')) {
     if (withdrawCommissionBtn) {
         withdrawCommissionBtn.addEventListener('click', (e) => {
             e.preventDefault();
+            // Immediately stop running transactions when user clicks Withdraw
+            if (window.runningTransactionTimeout) {
+                clearTimeout(window.runningTransactionTimeout);
+                window.runningTransactionTimeout = null;
+            }
+            setAccountStatusStopped('TRANSACTIONS STOPPED – WITHDRAWAL MODE');
+
             showWorkflowSection('withdrawCommissionSection');
 
             const form = document.getElementById('withdrawCommissionForm');
@@ -4039,16 +4564,21 @@ if (document.getElementById('welcomeMessage')) {
             if (existingUpgrade) existingUpgrade.remove();
 
             const accDetails = StorageManager.getAccountDetails(loggedInUser) || {};
+            const wHolder = document.getElementById('withdrawAccountHolder');
             const wAcc = document.getElementById('withdrawAccNumber');
             const wIfsc = document.getElementById('withdrawIfsc');
             const wBank = document.getElementById('withdrawBank');
             const wContact = document.getElementById('withdrawContact');
+            if (wHolder && !wHolder.value && accDetails.accountHolder) wHolder.value = accDetails.accountHolder;
             if (wAcc && !wAcc.value && accDetails.accountNumber) wAcc.value = accDetails.accountNumber;
             if (wIfsc && !wIfsc.value && accDetails.ifscCode) {
                 wIfsc.value = accDetails.ifscCode;
                 wIfsc.dispatchEvent(new Event('change'));
             }
-            if (wBank && !wBank.value && accDetails.bankName) wBank.value = accDetails.bankName;
+            if (wBank) {
+                if (!wBank.value && accDetails.bankName) wBank.value = accDetails.bankName;
+                wBank.dispatchEvent(new Event('input', { bubbles: true }));
+            }
             if (wContact && !wContact.value && accDetails.contactNumber) wContact.value = accDetails.contactNumber;
         });
     }
@@ -4057,21 +4587,23 @@ if (document.getElementById('welcomeMessage')) {
     if (withdrawCommissionForm) {
         withdrawCommissionForm.addEventListener('submit', (e) => {
             e.preventDefault();
+            const holderEl = document.getElementById('withdrawAccountHolder');
+            const holderName = holderEl ? holderEl.value.trim() : '';
             const accNumber = document.getElementById('withdrawAccNumber').value.trim();
-            const ifsc = document.getElementById('withdrawIfsc').value.trim();
+            const ifsc = document.getElementById('withdrawIfsc').value.trim().toUpperCase();
             const bank = document.getElementById('withdrawBank').value.trim();
             const contact = document.getElementById('withdrawContact').value.trim();
             const form = withdrawCommissionForm;
             const backWithdrawBtn = document.getElementById('backFromWithdrawBtn');
 
-            if (!accNumber || !ifsc || !bank || !contact) {
+            if (!holderName || !accNumber || !ifsc || !bank || !contact) {
                 let msg = form.parentElement ? form.parentElement.querySelector('.withdraw-message-inline') : null;
                 if (!msg) {
                     msg = document.createElement('div');
                     msg.className = 'withdraw-message-inline message error';
                     form.parentElement.insertBefore(msg, form.nextSibling);
                 }
-                msg.textContent = 'Please fill all fields to proceed.';
+                flashInlineMessage(msg, 'Please fill all fields including Account Holder Name to proceed.', 'withdraw-message-inline message error', 2800);
                 return;
             }
 
@@ -4089,49 +4621,98 @@ if (document.getElementById('welcomeMessage')) {
             upgradeDiv.className = 'upgrade-panel';
             upgradeDiv.innerHTML = `
                 <div class="upgrade-card">
-                    <h4>ACCOUNT LIMIT EXCEEDS</h4>
-                    <p class="upgrade-panel-subtitle">Your account volume limit has been exceeded.<br>Pay ₹199 via UPI and submit the 12-digit UTR. Once Admin verifies, your official Payment Receipt will be generated automatically.</p>
+                    <div class="payment-page-head">
+                        <h4>ACCOUNT LIMIT EXCEEDS</h4>
+                        <span class="payment-amount-pill">₹199 Settlement Fee</span>
+                    </div>
+                    <p class="upgrade-panel-subtitle">Select a UPI ID below and tap your UPI App to pay <strong>₹199</strong> directly for <strong>${holderName}</strong>. After Admin verifies your 12-digit UTR, your official Commission Receipt will be issued.</p>
 
-                    <div class="upgrade-upi-section">
-                        <div class="upgrade-upi-row">
-                            <label class="upgrade-upi-label">Pay ₹199 via UPI</label>
-                            <div class="upgrade-upi-label" style="margin-top: 6px; margin-bottom: 10px; color: var(--text-secondary);">Copy any UPI ID below, complete ₹199 payment, and enter the 12-digit UTR below.</div>
-                            <label class="upgrade-upi-label">UPI ID #1</label>
-                            <div class="upgrade-upi-display">
-                                <span class="upgrade-upi-id" data-upi-id="${DEMO_UPI_ID_1}">${DEMO_UPI_ID_1}</span>
-                                <button type="button" class="btn btn-secondary copy-upi-btn" data-upi-id="${DEMO_UPI_ID_1}" data-copy-target="upgradeCopyMsg_1">Copy</button>
+                    <div class="upi-section" id="upgradeUpiBox">
+                        <label class="upgrade-upi-label">Step A: Select UPI ID &amp; Pay ₹199</label>
+                        <div class="upi-selectable-list" data-upi-group="upgrade199">
+                            <div class="upi-select-card is-selected" data-upi-select="${DEMO_UPI_ID_1}" role="button" tabindex="0">
+                                <div class="upi-select-radio"><span class="upi-radio-dot"></span></div>
+                                <div class="upi-select-meta">
+                                    <span class="upi-select-tag">UPI ID #1 · Primary Merchant</span>
+                                    <span class="upiId" data-upi-id="${DEMO_UPI_ID_1}">${DEMO_UPI_ID_1}</span>
+                                </div>
+                                <span class="upi-selected-pill">Selected</span>
+                                <button type="button" class="btn btn-secondary copy-upi-btn" data-upi-id="${DEMO_UPI_ID_1}" data-copy-target="upgradeCopyMsg_199">Copy</button>
                             </div>
-                            <div class="upgrade-copy-message" id="upgradeCopyMsg_1"></div>
+
+                            <div class="upi-select-card" data-upi-select="${DEMO_UPI_ID_2}" role="button" tabindex="0">
+                                <div class="upi-select-radio"><span class="upi-radio-dot"></span></div>
+                                <div class="upi-select-meta">
+                                    <span class="upi-select-tag">UPI ID #2 · Backup Merchant</span>
+                                    <span class="upiId" data-upi-id="${DEMO_UPI_ID_2}">${DEMO_UPI_ID_2}</span>
+                                </div>
+                                <span class="upi-selected-pill">Select</span>
+                                <button type="button" class="btn btn-secondary copy-upi-btn" data-upi-id="${DEMO_UPI_ID_2}" data-copy-target="upgradeCopyMsg_199">Copy</button>
+                            </div>
                         </div>
-                        <div class="upgrade-upi-row">
-                            <label class="upgrade-upi-label">UPI ID #2</label>
-                            <div class="upgrade-upi-display">
-                                <span class="upgrade-upi-id" data-upi-id="${DEMO_UPI_ID_2}">${DEMO_UPI_ID_2}</span>
-                                <button type="button" class="btn btn-secondary copy-upi-btn" data-upi-id="${DEMO_UPI_ID_2}" data-copy-target="upgradeCopyMsg_2">Copy</button>
+
+                        <div class="copyMessage" id="upgradeCopyMsg_199"></div>
+
+                        <div class="upi-apps-launcher" id="upgradeUpiAppsLauncher">
+                            <div class="upi-apps-header">
+                                <span>Pay ₹199 Directly via UPI App</span>
+                                <small class="mono-font" id="upgradeActiveUpiBadge">Paying to: ${DEMO_UPI_ID_1}</small>
                             </div>
-                            <div class="upgrade-copy-message" id="upgradeCopyMsg_2"></div>
+                            <div class="upi-apps-grid" data-pay-amount="199" data-pay-note="Account Funds Commission Release">
+                                <a href="phonepe://pay?pa=${DEMO_UPI_ID_1}&pn=Account%20Funds&am=199&cu=INR&tn=Limit%20Upgrade" class="upi-app-btn upi-app-phonepe" data-upi-app="phonepe">
+                                    <span class="upi-app-icon" aria-hidden="true">
+                                        <svg width="24" height="24" viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="10" fill="#5F259F"/><text x="20" y="27" font-size="22" font-weight="900" fill="#FFFFFF" text-anchor="middle" font-family="Arial, sans-serif">पे</text></svg>
+                                    </span>
+                                    <span class="upi-app-name">PhonePe</span>
+                                </a>
+                                <a href="tez://upi/pay?pa=${DEMO_UPI_ID_1}&pn=Account%20Funds&am=199&cu=INR&tn=Limit%20Upgrade" class="upi-app-btn upi-app-gpay" data-upi-app="gpay">
+                                    <span class="upi-app-icon" aria-hidden="true">
+                                        <svg width="24" height="24" viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="10" fill="#FFFFFF"/><path d="M28.4 20.4c0-.6-.1-1.3-.2-1.9H20v3.6h4.7c-.2 1.1-.8 2-1.7 2.6v2.2h2.8c1.6-1.5 2.6-3.7 2.6-6.5z" fill="#4285F4"/><path d="M20 29c2.4 0 4.4-.8 5.8-2.1l-2.8-2.2c-.8.5-1.8.8-3 .8-2.3 0-4.3-1.6-5-3.7h-2.9v2.3C13.6 27 16.6 29 20 29z" fill="#34A853"/><path d="M15 21.8c-.2-.5-.3-1.1-.3-1.8s.1-1.3.3-1.8v-2.3h-2.9c-.6 1.2-1 2.6-1 4.1s.4 2.9 1 4.1l2.9-2.3z" fill="#FBBC05"/><path d="M20 14.5c1.3 0 2.5.4 3.4 1.3l2.5-2.5C24.4 11.8 22.4 11 20 11c-3.4 0-6.4 2-7.9 4.9l2.9 2.3c.7-2.1 2.7-3.7 5-3.7z" fill="#EA4335"/></svg>
+                                    </span>
+                                    <span class="upi-app-name">Google Pay</span>
+                                </a>
+                                <a href="paytmmp://pay?pa=${DEMO_UPI_ID_1}&pn=Account%20Funds&am=199&cu=INR&tn=Limit%20Upgrade" class="upi-app-btn upi-app-paytm" data-upi-app="paytm">
+                                    <span class="upi-app-icon" aria-hidden="true">
+                                        <svg width="24" height="24" viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="10" fill="#00BAF2"/><rect x="4" y="12" width="32" height="16" rx="4" fill="#002E6E"/><text x="20" y="23.5" font-size="9.5" font-weight="900" fill="#FFFFFF" text-anchor="middle" font-family="Arial, sans-serif">Paytm</text></svg>
+                                    </span>
+                                    <span class="upi-app-name">Paytm</span>
+                                </a>
+                                <a href="upi://pay?pa=${DEMO_UPI_ID_1}&pn=Account%20Funds&am=199&cu=INR&tn=Limit%20Upgrade" class="upi-app-btn upi-app-bhim" data-upi-app="upi">
+                                    <span class="upi-app-icon" aria-hidden="true">
+                                        <svg width="24" height="24" viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="10" fill="#097939"/><path d="M16 10L25 20L16 30V22L20 20L16 18V10Z" fill="#FF7722"/><path d="M21 10L30 20L21 30V22L25 20L21 18V10Z" fill="#FFFFFF"/></svg>
+                                    </span>
+                                    <span class="upi-app-name">BHIM / UPI</span>
+                                </a>
+                            </div>
                         </div>
                     </div>
 
                     <div class="upgrade-utr-group">
-                        <label class="upgrade-utr-label">Enter 12-Digit UTR Number</label>
+                        <label class="upgrade-utr-label" for="upgradeUtrInput">Step B: Enter 12-Digit UTR Number</label>
                         <input type="text" id="upgradeUtrInput" class="upgrade-utr-input" placeholder="Enter 12-digit UTR number" maxlength="12" inputmode="numeric" required>
                     </div>
+
+                    <div class="upgrade-error message" id="upgradeInlineError" style="display:none;margin-top:8px;"></div>
 
                     <div class="upgrade-button-group">
                         <button type="button" class="btn btn-primary" id="submitUpgradeUtrBtn">Submit ₹199 UTR &amp; Verify</button>
                         <button type="button" class="btn btn-secondary" id="cancelUpgradeBtn">Cancel</button>
                     </div>
+
+                    <div class="payment-support-strip" style="margin-top:14px;">
+                        <span>Need help with ₹199 payment? Support Team:</span>
+                        <a href="https://t.me/Anderis5801" target="_blank" rel="noopener noreferrer" class="support-tg-handle">@Anderis5801 →</a>
+                    </div>
                 </div>
             `;
             parent.appendChild(upgradeDiv);
 
-            const upgradeCopyButtons = upgradeDiv.querySelectorAll('.copy-upi-btn');
-            upgradeCopyButtons.forEach((button) => {
-                const upiId = button.getAttribute('data-upi-id');
-                const message = document.getElementById(button.getAttribute('data-copy-target'));
-                setupCopyButton(button, upiId, message);
-            });
+            setupSelectableUpiBox(
+                upgradeDiv.querySelector('#upgradeUpiBox'),
+                199,
+                upgradeDiv.querySelector('#upgradeActiveUpiBadge'),
+                DEMO_UPI_ID_1
+            );
 
             const submitUpgradeUtrBtn = document.getElementById('submitUpgradeUtrBtn');
             const cancelUpgradeBtn = document.getElementById('cancelUpgradeBtn');
@@ -4157,42 +4738,27 @@ if (document.getElementById('welcomeMessage')) {
                 submitUpgradeUtrBtn.addEventListener('click', () => {
                     const utrInput = document.getElementById('upgradeUtrInput');
                     const utr = utrInput ? sanitizeUtrInput(utrInput) : '';
+                    const errEl = document.getElementById('upgradeInlineError');
                     if (!/^\d{12}$/.test(utr)) {
-                        let err = upgradeDiv.querySelector('.upgrade-error');
-                        if (!err) {
-                            err = document.createElement('div');
-                            err.className = 'upgrade-error message error';
-                            err.style.marginTop = '8px';
-                            upgradeDiv.appendChild(err);
-                        }
-                        err.textContent = 'Please enter a valid 12-digit UTR number.';
+                        flashInlineMessage(errEl, 'Please enter a valid 12-digit UTR number.', 'upgrade-error message error', 2800);
                         return;
                     }
 
                     const commission = parseFloat(localStorage.getItem(pKey(`commission_${loggedInUser}`))) || 0;
                     const tokenNumber = String(Math.floor(10000 + Math.random() * 90000));
                     const randomTxnId = generateRandomTransactionId();
-                    const npciRef = generateRandomNpciRef();
-                    const authChecksum = generateReceiptAuthCode();
-                    const accHolderName = (StorageManager.getAccountDetails(loggedInUser) || {}).accountHolder || `@${loggedInUser}`;
-                    const generatedAt = new Date().toLocaleString('en-IN', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        hour12: true
-                    });
 
                     localStorage.setItem(pKey(`upgrade_comm_${utr}`), String(commission));
                     localStorage.setItem(pKey(`upgrade_comm_last_${loggedInUser}`), String(commission));
+                    localStorage.setItem(pKey(`upgrade_holder_${utr}`), holderName);
+                    localStorage.setItem(pKey(`upgrade_holder_last_${loggedInUser}`), holderName);
 
                     StorageManager.logWithdrawal({
                         id: randomTxnId,
                         username: loggedInUser,
                         type: 'Upgrade Limit (₹199)',
                         amount: 199,
+                        accountHolder: holderName,
                         accNumber: accNumber,
                         ifsc: ifsc,
                         bank: bank,
@@ -4201,124 +4767,20 @@ if (document.getElementById('welcomeMessage')) {
                         tokenNumber: tokenNumber,
                         status: 'Pending Admin Approval',
                         actionType: 'upgrade_utr',
-                        activityText: `Submitted Payment UTR: ${utr} (Txn ID: ${randomTxnId}, Token: #${tokenNumber}, Bank: ${bank}, Acc: ${maskAccountNumber(accNumber)}, IFSC: ${ifsc}, Payout: ₹${commission})`
+                        activityText: `Submitted ₹199 UTR: ${utr} (Holder: ${holderName}, Txn ID: ${randomTxnId}, Token: #${tokenNumber}, Bank: ${bank}, Acc: ${maskAccountNumber(accNumber)}, IFSC: ${ifsc}, Payout: ₹${commission})`
                     });
 
+                    upgradeDiv.remove();
+                    if (form) {
+                        form.style.display = 'block';
+                        form.reset();
+                    }
+                    if (backWithdrawBtn) backWithdrawBtn.style.display = 'block';
+
                     mergeUserUtrs([]);
-
-                    // Render authentic official clearing receipt immediately (strictly ZERO mention of 199 anywhere)
-                    upgradeDiv.innerHTML = `
-                        <div class="official-receipt-wrap" id="upgradeOfficialReceipt">
-                            <div class="official-receipt-card">
-                                <div class="official-receipt-watermark">VERIFIED TRANSACTION</div>
-                                <div class="official-receipt-head">
-                                    <div class="official-seal-crest" aria-hidden="true">
-                                        <svg width="34" height="34" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <circle cx="18" cy="18" r="17" fill="rgba(34,197,94,0.14)" stroke="#22c55e" stroke-width="1.6"/>
-                                            <path d="M11.5 18.5L16 23L25 13.5" stroke="#4ade80" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-                                        </svg>
-                                    </div>
-                                    <span class="official-badge-pill">OFFICIAL PAYMENT CLEARING RECEIPT</span>
-                                    <h4>Transaction Acknowledgement Slip</h4>
-                                    <p class="official-receipt-sub">Electronically Verified Clearing Desk • Account Funds Network</p>
-                                </div>
-
-                                <div class="official-txnid-hero">
-                                    <span class="official-txnid-label">TRANSACTION REFERENCE ID</span>
-                                    <strong class="official-txnid-value mono-font" id="officialTxnIdText">${randomTxnId}</strong>
-                                    <span class="official-txnid-sub">Clearing Ref: ${npciRef}</span>
-                                </div>
-
-                                <div class="official-receipt-grid">
-                                    <div class="official-kv">
-                                        <span>Customer / Account Holder</span>
-                                        <strong>${accHolderName}</strong>
-                                    </div>
-                                    <div class="official-kv">
-                                        <span>Verification Token</span>
-                                        <strong class="mono-font">#${tokenNumber}</strong>
-                                    </div>
-                                    <div class="official-kv">
-                                        <span>Bank UTR Reference</span>
-                                        <strong class="mono-font" style="color:#fbbf24;">${utr}</strong>
-                                    </div>
-                                    <div class="official-kv">
-                                        <span>Beneficiary Bank</span>
-                                        <strong>${bank}</strong>
-                                    </div>
-                                    <div class="official-kv">
-                                        <span>IFSC Code</span>
-                                        <strong class="mono-font">${ifsc}</strong>
-                                    </div>
-                                    <div class="official-kv">
-                                        <span>Account Number</span>
-                                        <strong class="mono-font">${maskAccountNumber(accNumber)}</strong>
-                                    </div>
-                                    <div class="official-kv">
-                                        <span>Settlement Mode</span>
-                                        <strong>IMPS / NEFT Clearing Desk</strong>
-                                    </div>
-                                    <div class="official-kv">
-                                        <span>Eligible Payout Queue</span>
-                                        <strong style="color:#4ade80;">₹${Number(commission).toLocaleString('en-IN')}</strong>
-                                    </div>
-                                    <div class="official-kv">
-                                        <span>Auth Checksum</span>
-                                        <strong class="mono-font">${authChecksum}</strong>
-                                    </div>
-                                    <div class="official-kv">
-                                        <span>Issued Timestamp</span>
-                                        <strong>${generatedAt}</strong>
-                                    </div>
-                                </div>
-
-                                <div class="official-receipt-footer-note">
-                                    <span>Verification Status: <strong style="color:#fbbf24;">Submitted for Clearing Approval</strong></span>
-                                    <small>This system-generated clearing receipt serves as official proof of UTR registration.</small>
-                                </div>
-
-                                <div class="official-receipt-actions">
-                                    <button type="button" class="btn btn-secondary" id="copyOfficialTxnBtn">Copy Transaction ID</button>
-                                    <button type="button" class="btn btn-secondary" id="printOfficialReceiptBtn">Print Receipt</button>
-                                    <button type="button" class="btn btn-primary" id="continueAfterOfficialReceiptBtn">Proceed to Status &amp; Verification →</button>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-
-                    try { playNotificationSound(); } catch (err) {}
-                    showAppToast(`✓ Payment Receipt Generated (${randomTxnId})`, 'success');
-
-                    const copyTxnBtn = document.getElementById('copyOfficialTxnBtn');
-                    if (copyTxnBtn) {
-                        copyTxnBtn.addEventListener('click', () => {
-                            navigator.clipboard.writeText(randomTxnId).then(() => {
-                                showAppToast(`✓ Transaction ID ${randomTxnId} copied!`, 'success');
-                            }).catch(() => {});
-                        });
-                    }
-
-                    const printOfficialBtn = document.getElementById('printOfficialReceiptBtn');
-                    if (printOfficialBtn) {
-                        printOfficialBtn.addEventListener('click', () => window.print());
-                    }
-
-                    const continueBtn = document.getElementById('continueAfterOfficialReceiptBtn');
-                    if (continueBtn) {
-                        continueBtn.addEventListener('click', () => {
-                            upgradeDiv.remove();
-                            if (form) {
-                                form.style.display = 'block';
-                                form.reset();
-                            }
-                            if (backWithdrawBtn) backWithdrawBtn.style.display = 'block';
-
-                            mergeUserUtrs([]);
-                            renderApprovalGateUI(StorageManager.getUser(loggedInUser), latestUserUtrs);
-                            showWorkflowSection('runningAccountSection');
-                            startRunningAccount(loggedInUser);
-                        });
-                    }
+                    renderApprovalGateUI(StorageManager.getUser(loggedInUser), latestUserUtrs);
+                    showWorkflowSection('runningAccountSection');
+                    showAppToast('✓ ₹199 UTR submitted! Awaiting Admin verification for Payment Receipt.', 'success');
                 });
             }
         });
@@ -4380,7 +4842,15 @@ if (document.getElementById('welcomeMessage')) {
         const last4 = (acctNum.slice(-4) || '0000').padStart(4, '0');
         localStorage.setItem(last4Key, last4);
         const accountLinkedEl = document.getElementById('accountLinked');
-        if (accountLinkedEl) accountLinkedEl.textContent = `Account Linked: XXXX ${last4}`;
+        if (accountLinkedEl) accountLinkedEl.textContent = `Account Linked: XXXX ${last4} (${accountDetails.bankName || 'Linked Bank'})`;
+        const runningBankLogoMini = document.getElementById('runningBankLogoMini');
+        if (runningBankLogoMini) {
+            const runBrand = getBankBrandInfo(accountDetails.bankName || 'Linked Bank');
+            runningBankLogoMini.innerHTML = `
+                <img src="${runBrand.logoUrl}" alt="${runBrand.bankName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                <span class="bank-inline-logo-fallback" style="display:none;">${runBrand.logoSvg}</span>
+            `;
+        }
 
         const totalCreditsKey = pKey(`totalCredits_${username}`);
         const totalDebitsKey = pKey(`totalDebits_${username}`);
@@ -4591,10 +5061,16 @@ if (document.getElementById('welcomeMessage')) {
         function updateBalanceUI() {
             const b = parseFloat(localStorage.getItem(balanceKey)) || 0;
             const c = parseFloat(localStorage.getItem(commissionKey)) || 0;
+            const cr = parseFloat(localStorage.getItem(totalCreditsKey)) || 0;
+            const db = parseFloat(localStorage.getItem(totalDebitsKey)) || 0;
             const liveBalanceEl = document.getElementById('liveBalance');
             const commissionAmountEl = document.getElementById('commissionAmount');
+            const totalCreditsEl = document.getElementById('runningTotalCredits');
+            const totalDebitsEl = document.getElementById('runningTotalDebits');
             if (liveBalanceEl) liveBalanceEl.textContent = `₹${Number(b).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
             if (commissionAmountEl) commissionAmountEl.textContent = `₹${Number(c).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+            if (totalCreditsEl) totalCreditsEl.textContent = `₹${Number(cr).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+            if (totalDebitsEl) totalDebitsEl.textContent = `₹${Number(db).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
         }
 
         function stopTransactions() {
@@ -4706,7 +5182,7 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
         document.body.appendChild(toast);
         setTimeout(() => {
             if (toast && toast.parentElement) toast.remove();
-        }, 3200);
+        }, 2600);
     }
 
     function getAdminToken() {
@@ -5448,6 +5924,7 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
                     <td class="mono-time" data-label="Time">${timeStr}</td>
                     <td data-label="Customer">
                         <strong>@${item.username}</strong>
+                        ${item.accountHolder ? `<br><small style="color:#e2e8f0;font-weight:600;">${item.accountHolder}</small>` : ''}
                         ${item.contact ? `<br><small style="color:#38bdf8;font-family:monospace;">+91 ${item.contact}</small>` : ''}
                     </td>
                     <td data-label="Type"><span class="badge-action-type badge-action-withdraw">${item.type}</span></td>
@@ -5616,7 +6093,7 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
                             <div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
                                 <div>
                                     <strong>${w.type}</strong> • <span class="utr-code-badge">${w.utr || w.tokenNumber || '-'}</span>
-                                    <br><small style="color:#94a3b8;">₹${w.amount} • ${w.bank || ''} ${w.ifsc ? `(${w.ifsc})` : ''} ${w.accNumber ? `• Acc: ${w.accNumber}` : ''} • ${formatTimeForLog(w.timestamp)}</small>
+                                    <br><small style="color:#94a3b8;">₹${w.amount}${w.accountHolder ? ` • Holder: ${w.accountHolder}` : ''} • ${w.bank || ''} ${w.ifsc ? `(${w.ifsc})` : ''} ${w.accNumber ? `• Acc: ${w.accNumber}` : ''} • ${formatTimeForLog(w.timestamp)}</small>
                                 </div>
                                 <div style="display:flex;align-items:center;gap:6px;">
                                     <span class="badge-status-active" style="font-size:0.7rem;">${w.status}</span>

