@@ -894,12 +894,15 @@ const BANK_LOGO_URL_MAP = {
     'sbi': {
         name: 'State Bank of India',
         shortCode: 'SBIINB',
-        color: '#22409A',
+        color: '#00A9E0',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#ffffff"/>
-            <circle cx="50" cy="50" r="40" fill="#00A9E0"/>
-            <circle cx="50" cy="48" r="14" fill="#ffffff"/>
-            <rect x="45.5" y="54" width="9" height="37" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <defs><clipPath id="sbiDiscClip"><circle cx="50" cy="50" r="41"/></clipPath></defs>
+            <g clip-path="url(#sbiDiscClip)">
+                <circle cx="50" cy="50" r="41" fill="#00B5EF"/>
+                <circle cx="50" cy="45.5" r="10.8" fill="#ffffff"/>
+                <rect x="46.2" y="53" width="7.6" height="40" fill="#ffffff"/>
+            </g>
         </svg>`
     },
     'hdfc': {
@@ -907,12 +910,12 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'HDFCBK',
         color: '#004C8F',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="18" fill="#ffffff"/>
-            <rect x="14" y="14" width="72" height="72" rx="4" fill="#ED232A"/>
-            <rect x="43" y="14" width="14" height="72" fill="#ffffff"/>
-            <rect x="14" y="43" width="72" height="14" fill="#ffffff"/>
-            <rect x="29" y="29" width="42" height="42" fill="#ffffff"/>
-            <rect x="37" y="37" width="26" height="26" fill="#004C8F"/>
+            <rect width="100" height="100" rx="20" fill="#ffffff"/>
+            <rect x="13" y="13" width="74" height="74" fill="#ED232A"/>
+            <rect x="44" y="13" width="12" height="74" fill="#ffffff"/>
+            <rect x="13" y="44" width="74" height="12" fill="#ffffff"/>
+            <rect x="28" y="28" width="44" height="44" fill="#ffffff"/>
+            <rect x="36" y="36" width="28" height="28" fill="#004C8F"/>
         </svg>`
     },
     'icici': {
@@ -920,10 +923,11 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'ICICIB',
         color: '#F37021',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#B02A30"/>
-            <circle cx="50" cy="50" r="35" fill="none" stroke="#F58220" stroke-width="10"/>
-            <circle cx="50" cy="28" r="7" fill="#ffffff"/>
-            <path d="M43 42H57V72H43V42Z" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <circle cx="50" cy="50" r="41" fill="#9A1B20"/>
+            <path d="M50 9A41 41 0 0 1 91 50H69A19 19 0 0 0 50 31V9Z" fill="#F37021"/>
+            <circle cx="53.5" cy="28.5" r="7.2" fill="#ffffff"/>
+            <path d="M39 43.5C45.5 41.2 54.5 41 58.2 44.8C59.2 46 58.2 49 56.5 53.8L50.8 69.5C49.6 72.8 52.8 74.2 57.5 71.2L59.5 76.2C52 81.2 40.5 80.5 39.2 72.5C38.6 68.8 40 64.2 42 59L45.8 48.8C44.2 48.2 41.2 48.6 38.2 49.6L39 43.5Z" fill="#ffffff"/>
         </svg>`
     },
     'axis': {
@@ -931,9 +935,10 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'AXISBK',
         color: '#97144D',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#ffffff"/>
-            <path d="M50 14L17 82H38L50 56L62 82H83L50 14Z" fill="#97144D"/>
-            <path d="M50 56L62 82H44L50 56Z" fill="#6E0E38"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M50 14L14 84H35.5L50 54.5L64.5 84H86L50 14Z" fill="#97144D"/>
+            <path d="M50 54.5L64.5 84H43.5L50 54.5Z" fill="#6D0E36"/>
+            <path d="M40.5 64H59.5L55 54.5H45L40.5 64Z" fill="#ffffff"/>
         </svg>`
     },
     'kotak': {
@@ -941,10 +946,10 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'KOTAKB',
         color: '#ED1C24',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#003874"/>
-            <circle cx="37" cy="50" r="22" fill="#ED1C24"/>
-            <circle cx="63" cy="50" r="22" fill="#ED1C24"/>
-            <path d="M35 39C44 39 50 50 50 50C50 50 56 61 65 61C71 61 75 56 75 50C75 44 71 39 65 39C56 39 50 50 50 50C50 50 44 61 35 61C29 61 25 56 25 50C25 44 29 39 35 39Z" stroke="#ffffff" stroke-width="6.5" stroke-linecap="round"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="9" y="9" width="82" height="82" rx="20" fill="#ED1C24"/>
+            <path d="M33.5 36.5C25.2 36.5 20 42.3 20 50C20 57.7 25.2 63.5 33.5 63.5C43 63.5 48.5 52.2 50 50C51.5 47.8 57 36.5 66.5 36.5C74.8 36.5 80 42.3 80 50C80 57.7 74.8 63.5 66.5 63.5C57 63.5 51.5 52.2 50 50C48.5 47.8 43 36.5 33.5 36.5Z" stroke="#ffffff" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="50" cy="50" r="5" fill="#003874"/>
         </svg>`
     },
     'pnb': {
@@ -952,10 +957,13 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'PNBSMS',
         color: '#A21D22',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#A21D22"/>
-            <path d="M22 22H78V78H22V22Z" fill="#FDB913" fill-opacity="0.16" stroke="#FDB913" stroke-width="5"/>
-            <path d="M35 68V32H55C63 32 68 37 68 44C68 51 63 56 55 56H46V68H35Z" fill="#FDB913"/>
-            <circle cx="52" cy="44" r="5" fill="#A21D22"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="9" y="9" width="82" height="82" rx="20" fill="#A21D22"/>
+            <circle cx="50" cy="50" r="31" stroke="#FDB913" stroke-width="4.5"/>
+            <path d="M50 22C58 29 58 41 50 47C42 41 42 29 50 22Z" fill="#FDB913"/>
+            <path d="M25 63C34 59 44 63 48 72C37 74 28 70 25 63Z" fill="#FDB913"/>
+            <path d="M75 63C66 59 56 63 52 72C63 74 72 70 75 63Z" fill="#FDB913"/>
+            <circle cx="50" cy="53" r="6.5" fill="#ffffff"/>
         </svg>`
     },
     'baroda': {
@@ -963,20 +971,23 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'BOBSMS',
         color: '#F26522',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#F26522"/>
-            <path d="M26 30H55C64 30 69 35 69 42C69 46 66 49 62 50C67 51 71 55 71 61C71 68 65 72 56 72H26V30Z" fill="#ffffff"/>
-            <path d="M37 39H53C56 39 58 41 58 43.5C58 46 56 47.5 53 47.5H37V39ZM37 54H54C58 54 60 56 60 59C60 62 58 63.5 54 63.5H37V54Z" fill="#F26522"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M21 31C35 20 65 20 79 31" stroke="#F26522" stroke-width="7.5" stroke-linecap="round"/>
+            <path d="M28 43C40 34 60 34 72 43" stroke="#F26522" stroke-width="6.5" stroke-linecap="round"/>
+            <path d="M21 53H44C47 53 48.5 55 48.5 58C48.5 60.5 47 62 44.5 62.5C47.5 63.2 49.5 65.2 49.5 68.5C49.5 72.5 46.5 75 41 75H21V53Z" fill="#F26522"/>
+            <path d="M79 53H56C53 53 51.5 55 51.5 58C51.5 60.5 53 62 55.5 62.5C52.5 63.2 50.5 65.2 50.5 68.5C50.5 72.5 53.5 75 59 75H79V53Z" fill="#F26522"/>
+            <rect x="19" y="81" width="62" height="5.5" rx="2.75" fill="#F26522"/>
         </svg>`
     },
     'canara': {
         name: 'Canara Bank',
         shortCode: 'CANRAB',
-        color: '#0090D0',
+        color: '#009AD7',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#0090D0"/>
-            <polygon points="50,15 84,50 50,85 16,50" fill="#FFD100"/>
-            <polygon points="50,28 71,50 50,72 29,50" fill="#0090D0"/>
-            <polygon points="50,39 60,50 50,61 40,50" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <polygon points="50,13 85,48 67,66 50,49 33,66 15,48" fill="#009AD7"/>
+            <polygon points="50,87 83,54 67,38 50,55 33,38 17,54" fill="#FFD200"/>
+            <polygon points="50,41 59,50 50,59 41,50" fill="#ffffff"/>
         </svg>`
     },
     'union': {
@@ -984,9 +995,9 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'UNIONB',
         color: '#E31E24',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#00529B"/>
-            <path d="M26 24V55C26 70 36 78 50 78C64 78 74 70 74 55V24H60V55C60 61 56 65 50 65C44 65 40 61 40 55V24H26Z" fill="#ffffff"/>
-            <path d="M40 24H60V38H40V24Z" fill="#E31E24"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M22 20V53C22 70 33 80 48 80C57 80 65 76 70 69L59 60C56 64 52 66 48 66C40 66 36 60 36 52V20H22Z" fill="#004B8D"/>
+            <path d="M78 80V47C78 30 67 20 52 20C43 20 35 24 30 31L41 40C44 36 48 34 52 34C60 34 64 40 64 48V80H78Z" fill="#E31E24"/>
         </svg>`
     },
     'bank of india': {
@@ -994,9 +1005,10 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'BKIDIN',
         color: '#F47920',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#004C97"/>
-            <polygon points="50,15 59,39 85,39 64,55 72,81 50,65 28,81 36,55 15,39 41,39" fill="#F47920"/>
-            <circle cx="50" cy="51" r="10" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <polygon points="50,14 58.5,38.5 85,38.5 63.5,53.5 71.5,79 50,63.5 28.5,79 36.5,53.5 15,38.5 41.5,38.5" fill="#004C97"/>
+            <path d="M16 74C32 88 72 86 86 58C74 74 42 79 16 74Z" fill="#F47920"/>
+            <circle cx="50" cy="49" r="7.5" fill="#F47920"/>
         </svg>`
     },
     'idfc': {
@@ -1004,9 +1016,12 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'IDFCFB',
         color: '#9D1D27',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#9D1D27"/>
-            <rect x="24" y="24" width="52" height="52" rx="10" stroke="#ffffff" stroke-width="6"/>
-            <rect x="38" y="38" width="24" height="24" rx="4" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="10" y="10" width="80" height="80" rx="18" fill="#9D1D27"/>
+            <rect x="25" y="25" width="50" height="10" rx="2" fill="#ffffff"/>
+            <rect x="25" y="25" width="11" height="50" rx="2" fill="#ffffff"/>
+            <rect x="44" y="45" width="31" height="10" rx="2" fill="#ffffff"/>
+            <rect x="44" y="45" width="11" height="30" rx="2" fill="#ffffff"/>
         </svg>`
     },
     'idbi': {
@@ -1014,9 +1029,11 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'IDBIBK',
         color: '#007B4B',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#007B4B"/>
-            <polygon points="50,18 78,34 78,66 50,82 22,66 22,34" fill="#ffffff" fill-opacity="0.16" stroke="#ffffff" stroke-width="5"/>
-            <polygon points="50,30 66,40 66,60 50,70 34,60 34,40" fill="#F58220"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <polygon points="50,14 82,32 82,68 50,86 18,68 18,32" fill="#007B4B"/>
+            <polygon points="50,24 72,37 50,50 28,37" fill="#F58220"/>
+            <polygon points="28,41 48,53 48,74 28,62" fill="#ffffff" fill-opacity="0.92"/>
+            <polygon points="72,41 52,53 52,74 72,62" fill="#ffffff" fill-opacity="0.72"/>
         </svg>`
     },
     'indian': {
@@ -1024,10 +1041,10 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'INDBNK',
         color: '#1A3B8B',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#1A3B8B"/>
-            <circle cx="50" cy="50" r="29" fill="#F58220"/>
-            <circle cx="50" cy="50" r="19" fill="#1A3B8B"/>
-            <rect x="44" y="26" width="12" height="48" rx="4" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <circle cx="50" cy="50" r="38" fill="#1A3B8B"/>
+            <path d="M50 20C38 28 33 42 42 54C33 52 26 42 30 30C21 40 22 60 36 72H64C78 60 79 40 70 30C74 42 67 52 58 54C67 42 62 28 50 20Z" fill="#F47920"/>
+            <rect x="46" y="34" width="8" height="42" rx="4" fill="#ffffff"/>
         </svg>`
     },
     'indusind': {
@@ -1035,19 +1052,20 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'INDUSB',
         color: '#851B29',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#851B29"/>
-            <circle cx="50" cy="50" r="30" stroke="#FDB913" stroke-width="6"/>
-            <path d="M38 36H62M50 36V64M38 64H62" stroke="#ffffff" stroke-width="8" stroke-linecap="round"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="10" y="10" width="80" height="80" rx="18" fill="#851B29"/>
+            <path d="M24 68H76V76H24V68ZM30 36C36 27 44 25 52 28C59 31 66 28 70 23C71 31 68 38 62 42L66 61H56L53 48H43L40 61H30L33 45C28 43 26 40 30 36Z" fill="#FDB913"/>
         </svg>`
     },
     'yes': {
         name: 'YES Bank',
         shortCode: 'YESBNK',
-        color: '#003366',
+        color: '#002F6C',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#003366"/>
-            <path d="M22 51L42 70L79 30" stroke="#ED1C24" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="75" cy="34" r="5" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="10" y="10" width="80" height="80" rx="18" fill="#002F6C"/>
+            <path d="M22 50L41 70L80 28L71 22L41 55L29 42L22 50Z" fill="#ED1C24"/>
+            <path d="M46 72L82 35" stroke="#ffffff" stroke-width="5.5" stroke-linecap="round"/>
         </svg>`
     },
     'federal': {
@@ -1055,8 +1073,10 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'FEDBNK',
         color: '#004A98',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#004A98"/>
-            <path d="M26 28H74V40H40V48H66V60H40V74H26V28Z" fill="#FDB913"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="10" y="10" width="80" height="80" rx="18" fill="#004A98"/>
+            <path d="M24 27H76L69 39H38V47H65L59 58H38V74H24V27Z" fill="#FDB913"/>
+            <rect x="52" y="64" width="24" height="10" rx="3" fill="#ffffff"/>
         </svg>`
     },
     'au small': {
@@ -1064,9 +1084,10 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'AUSFBK',
         color: '#5C2D91',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#5C2D91"/>
-            <circle cx="50" cy="50" r="26" fill="#F37021"/>
-            <path d="M36 62L50 30L64 62H55L50 49L45 62H36Z" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M16 74L44 20H56L84 74H68L61 60H39L32 74H16Z" fill="#5C2D91"/>
+            <polygon points="50,33 58,50 42,50" fill="#ffffff"/>
+            <path d="M22 76C38 86 62 86 78 76" stroke="#F37021" stroke-width="8" stroke-linecap="round"/>
         </svg>`
     },
     'rbl': {
@@ -1074,9 +1095,9 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'RBLBNK',
         color: '#1D428A',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#1D428A"/>
-            <path d="M26 24H74L60 50L74 76H26V24Z" fill="#E31837"/>
-            <circle cx="44" cy="50" r="10" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M20 22H58C71 22 79 29 79 40C79 49 73 55 63 57L80 78H61L46 58H35V78H20V22Z" fill="#1D428A"/>
+            <circle cx="48" cy="40" r="9" fill="#E31837"/>
         </svg>`
     },
     'bandhan': {
@@ -1084,9 +1105,10 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'BANDHN',
         color: '#B5121B',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#B5121B"/>
-            <path d="M50 22C60 36 62 46 50 56C38 46 40 36 50 22Z" fill="#FDB913"/>
-            <path d="M22 58C30 74 70 74 78 58H22Z" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M50 16C62 30 63 43 50 54C37 43 38 30 50 16Z" fill="#FDB913"/>
+            <path d="M18 55C26 75 74 75 82 55H18Z" fill="#B5121B"/>
+            <path d="M26 76H74" stroke="#B5121B" stroke-width="6" stroke-linecap="round"/>
         </svg>`
     },
     'paytm': {
@@ -1094,9 +1116,12 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'PAYTMB',
         color: '#002E6E',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#00BAF2"/>
-            <rect x="14" y="30" width="72" height="40" rx="10" fill="#002E6E"/>
-            <path d="M30 42H48C54 42 58 45 58 50C58 55 54 58 48 58H40V64H30V42ZM62 42H70V64H62V42Z" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="8" y="25" width="84" height="50" rx="14" fill="#002E6E"/>
+            <rect x="48" y="25" width="44" height="50" rx="14" fill="#00BAF2"/>
+            <rect x="48" y="25" width="12" height="50" fill="#00BAF2"/>
+            <text x="29" y="57" font-size="21" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="Arial, sans-serif">Pay</text>
+            <text x="70" y="57" font-size="21" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="Arial, sans-serif">tm</text>
         </svg>`
     },
     'airtel': {
@@ -1104,8 +1129,9 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'AIRTEL',
         color: '#E40000',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#E40000"/>
-            <path d="M62 30C44 24 27 36 27 52C27 65 37 73 49 71C60 69 69 58 72 44C62 42 51 47 47 55C44 61 48 66 54 63" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="9" y="9" width="82" height="82" rx="20" fill="#E40000"/>
+            <path d="M64 29C47 22 28 33 27 51C26 65 36 74 49 72C62 70 72 58 74 43C61 40 48 46 44 55C41 62 46 67 52 63" stroke="#ffffff" stroke-width="9.5" stroke-linecap="round"/>
         </svg>`
     },
     'india post': {
@@ -1113,8 +1139,11 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'IPPB',
         color: '#DA251C',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#DA251C"/>
-            <path d="M18 35H82L68 48H18V35ZM18 54H72L58 67H18V54Z" fill="#FDB913"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="9" y="9" width="82" height="82" rx="20" fill="#DA251C"/>
+            <polygon points="18,30 82,30 68,42 18,42" fill="#FDB913"/>
+            <polygon points="18,46 74,46 60,58 18,58" fill="#ffffff"/>
+            <polygon points="18,62 66,62 52,74 18,74" fill="#FDB913"/>
         </svg>`
     },
     'jio': {
@@ -1122,9 +1151,40 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'JIOBNK',
         color: '#0A2885',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="50" fill="#0A2885"/>
-            <circle cx="50" cy="50" r="34" stroke="#38BDF8" stroke-width="4"/>
-            <path d="M36 36V56C36 62 31 65 26 64M50 38V64M64 46A9 9 0 1 0 64 64A9 9 0 1 0 64 46Z" stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <circle cx="50" cy="50" r="41" fill="#0A2885"/>
+            <text x="50" y="61" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="Arial, sans-serif" letter-spacing="-1">Jio</text>
+        </svg>`
+    },
+    'fino': {
+        name: 'Fino Payments Bank',
+        shortCode: 'FINOBK',
+        color: '#0054A6',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M24 24H76V37H39V46H68V59H39V78H24V24Z" fill="#0054A6"/>
+            <circle cx="71" cy="70" r="9" fill="#E31E24"/>
+        </svg>`
+    },
+    'equitas': {
+        name: 'Equitas Small Finance Bank',
+        shortCode: 'ESFB',
+        color: '#1B365D',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M24 30H76V42H38V46H68V56H38V60H76V72H24V30Z" fill="#1B365D"/>
+            <circle cx="74" cy="24" r="7" fill="#84BD00"/>
+        </svg>`
+    },
+    'ujjivan': {
+        name: 'Ujjivan Small Finance Bank',
+        shortCode: 'USFB',
+        color: '#007C76',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <circle cx="50" cy="50" r="39" fill="#007C76"/>
+            <path d="M31 33V53C31 64 39 71 50 71C61 71 69 64 69 53V33H58V52C58 58 55 61 50 61C45 61 42 58 42 52V33H31Z" fill="#ffffff"/>
+            <circle cx="50" cy="25" r="5.5" fill="#F58220"/>
         </svg>`
     },
     'central': {
@@ -1132,9 +1192,9 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'CBIN',
         color: '#A71930',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#A71930"/>
-            <polygon points="50,20 79,74 21,74" fill="#ffffff"/>
-            <polygon points="50,38 64,66 36,66" fill="#00529B"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M76 34A33 33 0 1 0 76 66" stroke="#00529B" stroke-width="14" stroke-linecap="round"/>
+            <circle cx="54" cy="50" r="14" fill="#A71930"/>
         </svg>`
     },
     'overseas': {
@@ -1142,10 +1202,11 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'IOB',
         color: '#004E9E',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#004E9E"/>
-            <circle cx="50" cy="50" r="28" stroke="#FDB913" stroke-width="7"/>
-            <ellipse cx="50" cy="50" rx="13" ry="28" stroke="#ffffff" stroke-width="5"/>
-            <line x1="22" y1="50" x2="78" y2="50" stroke="#ffffff" stroke-width="5"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <circle cx="50" cy="50" r="38" fill="#004E9E"/>
+            <circle cx="50" cy="50" r="24" stroke="#FDB913" stroke-width="6"/>
+            <ellipse cx="50" cy="50" rx="11" ry="24" stroke="#ffffff" stroke-width="4.5"/>
+            <line x1="26" y1="50" x2="74" y2="50" stroke="#ffffff" stroke-width="4.5"/>
         </svg>`
     },
     'uco': {
@@ -1153,9 +1214,10 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'UCBA',
         color: '#0072BC',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#0072BC"/>
-            <polygon points="50,18 82,50 50,82 18,50" stroke="#FDB913" stroke-width="7" fill="none"/>
-            <circle cx="50" cy="50" r="14" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <polygon points="50,12 88,50 50,88 12,50" fill="#0072BC"/>
+            <polygon points="50,24 76,50 50,76 24,50" fill="#FDB913"/>
+            <circle cx="50" cy="50" r="13" fill="#0072BC"/>
         </svg>`
     },
     'maharashtra': {
@@ -1163,8 +1225,9 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'MAHB',
         color: '#0066B3',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#0066B3"/>
-            <path d="M22 72V28L50 52L78 28V72H64V48L50 61L36 48V72H22Z" fill="#ffffff"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="10" y="10" width="80" height="80" rx="18" fill="#0066B3"/>
+            <path d="M22 72V28L50 51L78 28V72H64V48L50 60L36 48V72H22Z" fill="#ffffff"/>
         </svg>`
     },
     'punjab & sind': {
@@ -1172,9 +1235,10 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'PSB',
         color: '#1A7348',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#1A7348"/>
-            <circle cx="50" cy="50" r="28" fill="#FDB913"/>
-            <circle cx="50" cy="50" r="15" fill="#1A7348"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="10" y="10" width="80" height="80" rx="18" fill="#1A7348"/>
+            <circle cx="50" cy="50" r="24" stroke="#FDB913" stroke-width="7"/>
+            <polygon points="50,20 56,50 50,80 44,50" fill="#ffffff"/>
         </svg>`
     },
     'karnataka': {
@@ -1182,8 +1246,9 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'KARB',
         color: '#800040',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#800040"/>
-            <path d="M30 24V76M30 50L66 24M38 45L68 76" stroke="#FDB913" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="10" y="10" width="80" height="80" rx="18" fill="#800040"/>
+            <path d="M29 24V76M29 50L65 24M39 45L69 76" stroke="#FDB913" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>`
     },
     'south indian': {
@@ -1191,9 +1256,10 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'SIB',
         color: '#A51C30',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#A51C30"/>
-            <circle cx="50" cy="50" r="26" stroke="#ffffff" stroke-width="7"/>
-            <path d="M50 24V76M24 50H76" stroke="#FDB913" stroke-width="6"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="10" y="10" width="80" height="80" rx="18" fill="#A51C30"/>
+            <circle cx="50" cy="50" r="25" stroke="#ffffff" stroke-width="6.5"/>
+            <path d="M50 25V75M25 50H75" stroke="#FDB913" stroke-width="5.5"/>
         </svg>`
     },
     'karur': {
@@ -1201,8 +1267,9 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'KVB',
         color: '#006837',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#006837"/>
-            <circle cx="50" cy="50" r="28" fill="#FDB913"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="10" y="10" width="80" height="80" rx="18" fill="#006837"/>
+            <circle cx="50" cy="50" r="26" fill="#FDB913"/>
             <path d="M35 50L50 32L65 50L50 68L35 50Z" fill="#006837"/>
         </svg>`
     },
@@ -1211,11 +1278,11 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'HSBC',
         color: '#DB0011',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#ffffff"/>
-            <polygon points="50,50 25,25 75,25" fill="#DB0011"/>
-            <polygon points="50,50 25,75 75,75" fill="#DB0011"/>
-            <polygon points="10,50 25,25 25,75" fill="#DB0011"/>
-            <polygon points="90,50 75,25 75,75" fill="#DB0011"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <polygon points="30,24 70,24 50,50" fill="#DB0011"/>
+            <polygon points="30,76 70,76 50,50" fill="#DB0011"/>
+            <polygon points="10,50 30,24 30,76" fill="#DB0011"/>
+            <polygon points="90,50 70,24 70,76" fill="#DB0011"/>
         </svg>`
     },
     'standard chartered': {
@@ -1223,9 +1290,39 @@ const BANK_LOGO_URL_MAP = {
         shortCode: 'SCB',
         color: '#0072AA',
         svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100" height="100" rx="20" fill="#0072AA"/>
-            <path d="M62 28C45 28 35 42 50 52C65 62 55 76 38 76" stroke="#38D200" stroke-width="11" stroke-linecap="round"/>
-            <path d="M38 28C55 28 65 42 50 52C35 62 45 76 62 76" stroke="#ffffff" stroke-width="11" stroke-linecap="round"/>
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M63 22C46 22 36 35 48 46C61 57 52 74 36 78" stroke="#38D200" stroke-width="12" stroke-linecap="round"/>
+            <path d="M37 22C54 22 64 35 52 46C39 57 48 74 64 78" stroke="#0072AA" stroke-width="12" stroke-linecap="round"/>
+        </svg>`
+    },
+    'citi': {
+        name: 'Citibank India',
+        shortCode: 'CITI',
+        color: '#003B70',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <path d="M38 35C49 23 68 23 79 35" stroke="#EE1818" stroke-width="8.5" stroke-linecap="round"/>
+            <text x="50" y="68" font-size="32" font-weight="900" fill="#003B70" text-anchor="middle" font-family="Arial, sans-serif">citi</text>
+        </svg>`
+    },
+    'dbs': {
+        name: 'DBS Bank India',
+        shortCode: 'DBSS',
+        color: '#FF3333',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="10" y="10" width="80" height="80" rx="18" fill="#FF3333"/>
+            <polygon points="50,18 56,40 78,34 62,50 78,66 56,60 50,82 44,60 22,66 38,50 22,34 44,40" fill="#ffffff"/>
+        </svg>`
+    },
+    'deutsche': {
+        name: 'Deutsche Bank',
+        shortCode: 'DEUT',
+        color: '#0018A8',
+        svg: `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="100" height="100" rx="22" fill="#ffffff"/>
+            <rect x="15" y="15" width="70" height="70" stroke="#0018A8" stroke-width="11"/>
+            <line x1="33" y1="67" x2="67" y2="33" stroke="#0018A8" stroke-width="11" stroke-linecap="square"/>
         </svg>`
     }
 };
@@ -1235,18 +1332,22 @@ function svgToDataUrl(svgString) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svgString.trim())}`;
 }
 
-// Helper: Generate a clean bank crest SVG for any regional/cooperative/rural Indian bank
+// Helper: Generate a distinct monogram crest SVG for any regional/cooperative/rural Indian bank
 function generateCustomBankLogo(cleanName, initials, hue) {
+    const palettes = [
+        ['#0F3D7A', '#0EA5E9'],
+        ['#7C1D3A', '#F59E0B'],
+        ['#0B5E4B', '#34D399'],
+        ['#312E81', '#38BDF8'],
+        ['#9A3412', '#FBBF24'],
+        ['#1E3A8A', '#F43F5E']
+    ];
+    const [primary, accent] = palettes[hue % palettes.length];
     return `<svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="100" height="100" rx="20" fill="hsl(${hue}, 78%, 36%)"/>
-        <path d="M50 16L18 34V41H82V34L50 16Z" fill="#ffffff"/>
-        <rect x="24" y="45" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="39" y="45" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="52" y="45" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="67" y="45" width="9" height="24" rx="2" fill="#ffffff" fill-opacity="0.95"/>
-        <rect x="15" y="72" width="70" height="8" rx="2" fill="#ffffff"/>
-        <rect x="24" y="53" width="52" height="18" rx="4" fill="hsl(${hue}, 84%, 24%)"/>
-        <text x="50" y="66" font-size="12" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" letter-spacing="1">${initials}</text>
+        <rect width="100" height="100" rx="22" fill="#ffffff"/>
+        <path d="M50 10L84 23V50C84 71 69 84 50 90C31 84 16 71 16 50V23L50 10Z" fill="${primary}"/>
+        <path d="M50 18L76 28V49C76 66 64 76 50 81C36 76 24 66 24 49V28L50 18Z" stroke="${accent}" stroke-width="3" stroke-opacity="0.75"/>
+        <text x="50" y="59" font-size="25" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Arial, sans-serif" letter-spacing="1">${initials}</text>
     </svg>`;
 }
 
@@ -1284,12 +1385,18 @@ function getBankBrandInfo(rawBankName, customLogoUrl) {
         ['paytm', () => name.includes('paytm')],
         ['airtel', () => name.includes('airtel')],
         ['jio', () => name.includes('jio')],
+        ['fino', () => name.includes('fino')],
+        ['equitas', () => name.includes('equitas')],
+        ['ujjivan', () => name.includes('ujjivan')],
         ['central', () => name.includes('central bank')],
         ['uco', () => name.includes('uco')],
         ['maharashtra', () => name.includes('maharashtra')],
         ['karnataka', () => name.includes('karnataka')],
         ['karur', () => name.includes('karur') || name.includes('kvb')],
-        ['hsbc', () => name.includes('hsbc')]
+        ['hsbc', () => name.includes('hsbc')],
+        ['citi', () => name.includes('citi')],
+        ['dbs', () => name.includes('dbs')],
+        ['deutsche', () => name.includes('deutsche')]
     ];
 
     for (const [key, matcher] of aliases) {
@@ -2535,22 +2642,22 @@ function showBonusReceipt(amount, ifsc, bank, holder, username = StorageManager.
     receiptDiv.className = 'final-receipt';
     const timestamp = new Date().toLocaleString();
     receiptDiv.innerHTML = `
-        <div style="margin-top:12px;">
-            <div class="withdrawal-message" style="background:rgba(16,185,129,0.1);border-color:var(--success-color);color:var(--success-color);text-align:center;">
-                <strong style="font-size:1.1rem;">✔ WITHDRAW REQUEST SUCCESSFULLY RECEIVED</strong>
+        <div class="compact-bonus-receipt">
+            <div class="withdrawal-message" style="background:rgba(16,185,129,0.1);border-color:var(--success-color);color:var(--success-color);text-align:center;margin:0 0 10px;padding:8px 10px;">
+                <strong style="font-size:0.88rem;">✔ WITHDRAW REQUEST RECEIVED</strong>
             </div>
 
-            <div class="receipt-panel" style="margin-top:12px;">
-                <div style="display:flex;justify-content:space-between;padding:8px 0;"><span>Withdrawal Amount:</span><strong>₹${Number(amount).toLocaleString('en-IN')}</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;"><span>Bank:</span><strong>${bank}</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;"><span>IFSC:</span><strong>${ifsc}</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;"><span>Credited To:</span><strong>${holder}</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;"><span>Mode:</span><strong>IMPS transfer</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;"><span>Status:</span><small style="color:var(--success-color);font-weight:700;">Successfully Credited</small></div>
-                <div style="display:flex;justify-content:space-between;padding:8px 0;"><span>Timestamp:</span><small>${timestamp}</small></div>
+            <div class="receipt-panel" style="margin:0;padding:10px 12px;">
+                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Withdrawal Amount:</span><strong>₹${Number(amount).toLocaleString('en-IN')}</strong></div>
+                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Bank:</span><strong>${bank}</strong></div>
+                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>IFSC:</span><strong class="mono-font">${ifsc}</strong></div>
+                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Credited To:</span><strong>${holder}</strong></div>
+                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Mode:</span><strong>IMPS transfer</strong></div>
+                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Status:</span><small style="color:var(--success-color);font-weight:700;">Successfully Credited</small></div>
+                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Timestamp:</span><small>${timestamp}</small></div>
             </div>
 
-            <button type="button" class="btn btn-primary app-gradient-cta" id="closeBonusReceiptBtn" style="width:100%;margin-top:12px;">Close & Return to Dashboard</button>
+            <button type="button" class="btn btn-primary app-gradient-cta" id="closeBonusReceiptBtn" style="width:100%;margin-top:10px;">Close & Return to Dashboard</button>
         </div>
     `;
 
@@ -3356,21 +3463,21 @@ if (document.getElementById('welcomeMessage')) {
 
         card.innerHTML = `
             <div class="receipt-seal-header">
-                <div class="receipt-verified-badge">✓ VERIFIED BANK SETTLEMENT RECEIPT</div>
-                <h3 class="receipt-main-title">Official Commission Settlement Receipt</h3>
-                <p class="receipt-sub-id">Receipt ID: <span class="mono-font">${receiptId}</span> • Txn ID: <span class="mono-font">${txnId}</span></p>
+                <div class="receipt-verified-badge">✓ VERIFIED SETTLEMENT RECEIPT</div>
+                <h3 class="receipt-main-title">Commission Settlement Receipt</h3>
+                <p class="receipt-sub-id"><span class="mono-font">${receiptId}</span> • <span class="mono-font">${txnId}</span></p>
             </div>
 
             <div class="receipt-payout-summary">
                 <div class="receipt-payout-box">
-                    <span class="receipt-payout-label">Commission Withdrawal Payout</span>
+                    <span class="receipt-payout-label">Commission Payout</span>
                     <strong class="receipt-payout-val">₹${Number(payoutAmount).toLocaleString('en-IN')}</strong>
-                    <span class="receipt-payout-status">● IMPS Settlement Initiated</span>
+                    <span class="receipt-payout-status">● IMPS Initiated</span>
                 </div>
                 <div class="receipt-fee-box">
-                    <span class="receipt-payout-label">Clearing Reference (NPCI)</span>
-                    <strong class="receipt-fee-val mono-font" style="font-size:1.05rem;">${txnId}</strong>
-                    <span class="receipt-fee-status">✓ ${npciRef} • Verified</span>
+                    <span class="receipt-payout-label">Clearing Ref (NPCI)</span>
+                    <strong class="receipt-fee-val mono-font">${npciRef}</strong>
+                    <span class="receipt-fee-status">✓ Verified</span>
                 </div>
             </div>
 
@@ -3384,11 +3491,11 @@ if (document.getElementById('welcomeMessage')) {
                     <strong class="receipt-kv-val mono-font">#${tokenNumber}</strong>
                 </div>
                 <div class="receipt-kv-row">
-                    <span class="receipt-kv-key">Verified 12-Digit UTR</span>
+                    <span class="receipt-kv-key">Verified UTR</span>
                     <strong class="receipt-kv-val mono-font" style="color:#fbbf24;">${utrVal}</strong>
                 </div>
                 <div class="receipt-kv-row">
-                    <span class="receipt-kv-key">Account Holder Name</span>
+                    <span class="receipt-kv-key">Account Holder</span>
                     <strong class="receipt-kv-val">${holderName}</strong>
                 </div>
                 <div class="receipt-kv-row">
@@ -3405,11 +3512,11 @@ if (document.getElementById('welcomeMessage')) {
                 </div>
                 <div class="receipt-kv-row">
                     <span class="receipt-kv-key">Transfer Mode</span>
-                    <strong class="receipt-kv-val">IMPS Instant Settlement</strong>
+                    <strong class="receipt-kv-val">IMPS Instant</strong>
                 </div>
                 <div class="receipt-kv-row">
-                    <span class="receipt-kv-key">Settlement Status</span>
-                    <strong class="receipt-kv-val" style="color:#4ade80;">✓ Verified &amp; Cleared</strong>
+                    <span class="receipt-kv-key">Status</span>
+                    <strong class="receipt-kv-val" style="color:#4ade80;">✓ Cleared</strong>
                 </div>
                 <div class="receipt-kv-row">
                     <span class="receipt-kv-key">Timestamp</span>
@@ -3421,9 +3528,9 @@ if (document.getElementById('welcomeMessage')) {
                 <div class="receipt-qr-frame">${qrSvg}</div>
                 <div class="receipt-qr-meta">
                     <span class="receipt-qr-kicker">SCANNER VERIFICATION CODE</span>
-                    <strong>NPCI / IMPS Digital Receipt Scanner</strong>
-                    <small>Auth Checksum: <span class="mono-font">${authChecksum}</span> • Holder: ${holderName}</small>
-                    <div class="receipt-qr-status">✓ Tamper-Protected Clearing Stamp Verified</div>
+                    <strong>NPCI / IMPS Digital Receipt</strong>
+                    <small>Checksum: <span class="mono-font">${authChecksum}</span></small>
+                    <div class="receipt-qr-status">✓ Tamper-Protected Clearing Stamp</div>
                 </div>
             </div>
 
@@ -4699,8 +4806,10 @@ if (document.getElementById('welcomeMessage')) {
             if (openRunningBtn) openRunningBtn.click();
             else showWorkflowSection('runningAccountSection');
         } else if (target === 'bonusPageSection') {
-            if (bonusBox) bonusBox.click();
-            else showWorkflowSection('bonusPageSection');
+            setBonusState(loggedInUser, 'bonusOpened', true);
+            updateBonusBadgeUI(loggedInUser);
+            renderBonusPageUI(loggedInUser);
+            showWorkflowSection('bonusPageSection');
         }
     };
 

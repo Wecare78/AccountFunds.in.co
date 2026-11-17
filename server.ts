@@ -1032,6 +1032,7 @@ async function startServer() {
   // 5. VITE MIDDLEWARE (DEV & MULTI-PAGE SERVING)
   // ----------------------------------------
   if (process.env.NODE_ENV === 'production') {
+    app.use('/admin/assets', express.static(path.resolve(__dirname, 'dist', 'assets')));
     app.use(express.static(path.resolve(__dirname, 'dist')));
     app.get(['/admin', '/admin/', '/admin/index.html', '/admin.html'], (_req: Request, res: Response) => {
       res.sendFile(path.resolve(__dirname, 'dist', 'admin', 'index.html'));
@@ -1044,6 +1045,14 @@ async function startServer() {
     });
   } else {
     app.use(express.static(path.resolve(__dirname, 'public')));
+    app.get(['/admin', '/admin.html'], (req: Request, res: Response, next) => {
+      if (req.path === '/admin/') return next();
+      res.redirect(302, '/admin/');
+    });
+    app.get('/dashboard', (req: Request, res: Response, next) => {
+      if (req.path === '/dashboard/') return next();
+      res.redirect(302, '/dashboard.html');
+    });
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'mpa',
