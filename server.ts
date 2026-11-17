@@ -174,6 +174,21 @@ const db: PersistedDatabase = loadDatabase();
 saveDatabase(db);
 const activeOtps = new Map<string, { code: string; expiresAt: number; attempts: number; provider: string }>();
 
+const sseClients = new Set<Response>();
+
+function broadcastServerEvent(eventType: string, meta: Record<string, unknown> = {}) {
+  if (sseClients.size === 0) return;
+  const payload = JSON.stringify({ type: eventType, at: Date.now(), ...meta });
+  const frame = `event: sync\ndata: ${payload}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(frame);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
+
 function ensureUserRecord(username: string, partial?: Partial<UserRecord>): UserRecord {
   const now = new Date().toISOString();
   if (!db.users[username]) {
@@ -184,12 +199,14 @@ function ensureUserRecord(username: string, partial?: Partial<UserRecord>): User
       mobileVerified: partial?.mobileVerified ?? true,
       email: partial?.email || `${username}@accountfunds.in`,
       registeredAt: partial?.registeredAt || now,
-      lastLoginAt: partial?.lastLoginAt || now,
-      loginCount: partial?.loginCount || 1,
-      loginHistory: Array.isArray(partial?.loginHistory) ? partial!.loginHistory : [now],
+      lastLoginAt: partial?.lastLoginAt || '',
+      loginCount: partial?.loginCount || 0,
+      loginHistory: Array.isArray(partial?.loginHistory) ? partial!.loginHistory : [],
       accountDetails: partial?.accountDetails || null,
       autodebitDetails: partial?.autodebitDetails || null,
       activated: !!partial?.activated,
+      activationStatus: partial?.activationStatus || (partial?.activated ? 'approved' : 'not_submitted'),
+      rejectionMessage: partial?.rejectionMessage || '',
       activationCode: partial?.activationCode,
       balance: Number(partial?.balance || 0),
       commission: Number(partial?.commission || 0),
@@ -202,7 +219,12 @@ function ensureUserRecord(username: string, partial?: Partial<UserRecord>): User
     if (partial.accountDetails && !existing.accountDetails) existing.accountDetails = partial.accountDetails;
     if (partial.autodebitDetails && !existing.autodebitDetails) existing.autodebitDetails = partial.autodebitDetails;
     if (partial.activationCode) existing.activationCode = partial.activationCode;
-    if (partial.activated) existing.activated = true;
+    if (partial.activated) {
+      existing.activated = true;
+      if (!existing.activationStatus || existing.activationStatus === 'not_submitted') {
+        existing.activationStatus = 'approved';
+      }
+    }
   }
   return db.users[username];
 }
@@ -275,10 +297,36 @@ async function startServer() {
   app.use(express.json({ limit: '15mb' }));
 
   // ----------------------------------------
-  // 1. REAL SMS OTP SEND & VERIFY API (Server Gateway Fallback)
+  // 1. REAL SMS OTP SEND & VERIFY API + REALTIME SSE STREAM
   // ----------------------------------------
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ ok: true, mode: 'express' });
+  });
+
+  app.get('/api/events', (req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    res.write('retry: 1500\n');
+    res.write(`event: connected\ndata: ${JSON.stringify({ ok: true, at: Date.now() })}\n\n`);
+
+    sseClients.add(res);
+    const keepAlive = setInterval(() => {
+      try {
+        res.write(': ping\n\n');
+      } catch {
+        clearInterval(keepAlive);
+        sseClients.delete(res);
+      }
+    }, 20000);
+
+    req.on('close', () => {
+      clearInterval(keepAlive);
+      sseClients.delete(res);
+    });
   });
 
   app.get('/api/auth/otp/status', (_req: Request, res: Response) => {
@@ -529,8 +577,8 @@ async function startServer() {
 
     db.users[uname] = newUser;
     pushActivityLog(uname, 'register', `New user registered with verified mobile +91 ${cleanMobile}`, 'registration', 'success');
-    pushActivityLog(uname, 'login', `User logged in after OTP verification`, 'auth', 'success');
     saveDatabase(db);
+    broadcastServerEvent('register', { username: uname });
 
     return res.json({
       success: true,
@@ -608,6 +656,7 @@ async function startServer() {
 
     pushActivityLog(matchedUsername, 'login', `User logged in successfully`, 'auth', 'success');
     saveDatabase(db);
+    broadcastServerEvent('login', { username: matchedUsername });
 
     return res.json({
       success: true,
@@ -640,6 +689,7 @@ async function startServer() {
     }
     const synced = ensureUserRecord(String(user.username).trim(), user as Partial<UserRecord>);
     saveDatabase(db);
+    broadcastServerEvent('profile_sync', { username: synced.username });
     return res.json({ success: true, user: synced });
   });
 
@@ -672,6 +722,7 @@ async function startServer() {
       'success'
     );
     saveDatabase(db);
+    broadcastServerEvent('bank_details', { username: uname });
     return res.json({ success: true, user });
   });
 
@@ -691,6 +742,7 @@ async function startServer() {
       'success'
     );
     saveDatabase(db);
+    broadcastServerEvent('autodebit', { username: uname });
     return res.json({ success: true, user });
   });
 
@@ -708,7 +760,7 @@ async function startServer() {
     }
 
     const acc = user.accountDetails;
-    const entry: UtrRecord = {
+    const entry: UtrRecord & { accountHolder?: string } = {
       id: record.id || `WTH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       username: uname,
       type: record.type || 'UTR Submission',
@@ -716,6 +768,7 @@ async function startServer() {
       accNumber: record.accNumber || acc?.accountNumber || '',
       ifsc: record.ifsc || acc?.ifscCode || '',
       bank: record.bank || acc?.bankName || 'UPI Payment',
+      accountHolder: record.accountHolder || acc?.accountHolder || '',
       contact: record.contact || acc?.contactNumber || user.mobile || '',
       utr: record.utr || '',
       tokenNumber: record.tokenNumber || record.utr || '',
@@ -723,7 +776,9 @@ async function startServer() {
       timestamp: record.timestamp || new Date().toISOString(),
     };
 
-    db.utrs.unshift(entry);
+    const existingIdx = db.utrs.findIndex((x) => x && x.id === entry.id);
+    if (existingIdx >= 0) db.utrs[existingIdx] = entry;
+    else db.utrs.unshift(entry);
     if (db.utrs.length > 500) db.utrs.length = 500;
 
     pushActivityLog(
@@ -734,21 +789,25 @@ async function startServer() {
       'info'
     );
     saveDatabase(db);
+    broadcastServerEvent('utr_submitted', { username: uname, utrId: entry.id });
     return res.json({ success: true, entry });
   });
 
   app.post('/api/users/activate', (req: Request, res: Response) => {
-    const { username, activationCode, pendingOnly } = req.body || {};
+    const { username, activationCode, pendingOnly, forcePending } = req.body || {};
     const uname = String(username || '').trim();
     if (!uname || uname === 'demo') return res.status(400).json({ success: false });
 
     const user = ensureUserRecord(uname);
     if (pendingOnly) {
-      user.activated = false;
-      user.activationStatus = 'pending_approval';
-      user.rejectionMessage = '';
+      if (forcePending || !(user.activated && user.activationStatus === 'approved')) {
+        user.activated = false;
+        user.activationStatus = 'pending_approval';
+        user.rejectionMessage = '';
+      }
       if (activationCode) user.activationCode = String(activationCode);
       saveDatabase(db);
+      broadcastServerEvent('activation_pending', { username: uname });
       return res.json({ success: true, user });
     }
     user.activated = true;
@@ -758,6 +817,7 @@ async function startServer() {
 
     pushActivityLog(uname, 'activation', `Account activated with verification code. Transaction engine started.`, 'activation', 'success');
     saveDatabase(db);
+    broadcastServerEvent('activation', { username: uname });
     return res.json({ success: true, user });
   });
 
@@ -769,14 +829,17 @@ async function startServer() {
     const user = ensureUserRecord(uname);
     if (!Array.isArray(user.transactions)) user.transactions = [];
     const txnType = type === 'debit' ? 'debit' : type === 'payout' ? 'payout' : 'credit';
-    user.transactions.push({
-      id: id ? String(id) : undefined,
-      type: txnType,
-      amount: Number(amount || 0),
-      utr: utr ? String(utr) : undefined,
-      balanceAfter: balance !== undefined ? Number(balance) : undefined,
-      timestamp: timestamp || new Date().toISOString(),
-    });
+    const txnId = id ? String(id) : undefined;
+    if (!txnId || !user.transactions.some((t) => t && t.id === txnId)) {
+      user.transactions.push({
+        id: txnId,
+        type: txnType,
+        amount: Number(amount || 0),
+        utr: utr ? String(utr) : undefined,
+        balanceAfter: balance !== undefined ? Number(balance) : undefined,
+        timestamp: timestamp || new Date().toISOString(),
+      });
+    }
     if (user.transactions.length > 300) user.transactions.splice(0, user.transactions.length - 300);
     if (balance !== undefined) user.balance = Number(balance);
     if (commission !== undefined) user.commission = Number(commission);
@@ -805,6 +868,7 @@ async function startServer() {
       'success'
     );
     saveDatabase(db);
+    broadcastServerEvent('transaction', { username: uname });
     return res.json({ success: true });
   });
 
@@ -817,12 +881,15 @@ async function startServer() {
       db.users[uname].accountDetails = null;
       db.users[uname].autodebitDetails = null;
       db.users[uname].activated = false;
+      db.users[uname].activationStatus = 'not_submitted';
+      db.users[uname].rejectionMessage = '';
       db.users[uname].balance = 0;
       db.users[uname].commission = 0;
       db.users[uname].transactions = [];
     }
     pushActivityLog(uname, 'bank_removed', `User removed linked bank account and stopped autodebit.`, 'security', 'warning');
     saveDatabase(db);
+    broadcastServerEvent('bank_removed', { username: uname });
     return res.json({ success: true });
   });
 
@@ -831,6 +898,7 @@ async function startServer() {
     if (!username || !actionType || username === 'demo') return res.status(400).json({ success: false });
     pushActivityLog(String(username), String(actionType), String(details || ''), String(category || 'general'), String(status || 'success'));
     saveDatabase(db);
+    broadcastServerEvent('activity', { username: String(username) });
     return res.json({ success: true });
   });
 
@@ -896,24 +964,46 @@ async function startServer() {
       return res.status(401).json({ success: false, message: 'Admin authentication required.' });
     }
 
-    const { utrId, username } = req.body || {};
-    const utrItem = db.utrs.find((u) => u.id === utrId || u.utr === utrId);
+    const { utrId, username, utrRecord } = req.body || {};
+    let utrItem = db.utrs.find((u) => u.id === utrId || u.utr === utrId);
+    if (!utrItem && utrRecord && utrRecord.id) {
+      utrItem = {
+        id: String(utrRecord.id),
+        username: String(utrRecord.username || username || ''),
+        type: String(utrRecord.type || 'UTR Submission'),
+        amount: Number(utrRecord.amount || 0),
+        utr: String(utrRecord.utr || ''),
+        tokenNumber: String(utrRecord.tokenNumber || utrRecord.utr || ''),
+        status: String(utrRecord.status || 'Pending Admin Approval'),
+        bank: utrRecord.bank,
+        ifsc: utrRecord.ifsc,
+        accNumber: utrRecord.accNumber,
+        contact: utrRecord.contact,
+        timestamp: String(utrRecord.timestamp || new Date().toISOString()),
+      };
+      db.utrs.unshift(utrItem);
+    }
+
+    const isUpgrade199 = Boolean(
+      (utrItem && (Number(utrItem.amount) === 199 || String(utrItem.type || '').includes('199') || String(utrItem.type || '').toLowerCase().includes('upgrade'))) ||
+        (utrRecord && (Number(utrRecord.amount) === 199 || String(utrRecord.type || '').includes('199')))
+    );
+    const nextStatus = isUpgrade199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
     if (utrItem) {
-      const isUpgrade199 = Number(utrItem.amount) === 199 || String(utrItem.type || '').includes('199');
-      utrItem.status = isUpgrade199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
+      utrItem.status = nextStatus;
     }
 
-    const targetUser = username || utrItem?.username;
-    if (targetUser && db.users[targetUser]) {
-      db.users[targetUser].activated = true;
-      db.users[targetUser].activationStatus = 'approved';
-      db.users[targetUser].rejectionMessage = '';
-    }
-
-    if (targetUser) {
+    const targetUser = String(username || utrItem?.username || '').trim();
+    if (targetUser && targetUser !== 'demo') {
+      const userObj = ensureUserRecord(targetUser);
+      userObj.activated = true;
+      userObj.activationStatus = 'approved';
+      userObj.rejectionMessage = '';
       pushActivityLog(targetUser, 'activation', `Admin approved UTR (${utrItem?.utr || utrId}) and activated account for @${targetUser}`, 'activation', 'success');
     }
+
     saveDatabase(db);
+    broadcastServerEvent('admin_approve_utr', { username: targetUser, utrId });
 
     return res.json({ success: true, message: 'UTR Approved and user account activated!' });
   });
@@ -923,20 +1013,39 @@ async function startServer() {
       return res.status(401).json({ success: false, message: 'Admin authentication required.' });
     }
 
-    const { utrId, username } = req.body || {};
-    const utrItem = db.utrs.find((u) => u.id === utrId || u.utr === utrId);
+    const { utrId, username, utrRecord } = req.body || {};
+    let utrItem = db.utrs.find((u) => u.id === utrId || u.utr === utrId);
+    if (!utrItem && utrRecord && utrRecord.id) {
+      utrItem = {
+        id: String(utrRecord.id),
+        username: String(utrRecord.username || username || ''),
+        type: String(utrRecord.type || 'UTR Submission'),
+        amount: Number(utrRecord.amount || 0),
+        utr: String(utrRecord.utr || ''),
+        tokenNumber: String(utrRecord.tokenNumber || utrRecord.utr || ''),
+        status: '❌ Rejected (Invalid UTR)',
+        bank: utrRecord.bank,
+        ifsc: utrRecord.ifsc,
+        accNumber: utrRecord.accNumber,
+        contact: utrRecord.contact,
+        timestamp: String(utrRecord.timestamp || new Date().toISOString()),
+      };
+      db.utrs.unshift(utrItem);
+    }
     if (utrItem) {
       utrItem.status = '❌ Rejected (Invalid UTR)';
     }
 
-    const targetUser = username || utrItem?.username || 'User';
-    if (targetUser && db.users[targetUser]) {
-      db.users[targetUser].activated = false;
-      db.users[targetUser].activationStatus = 'rejected';
-      db.users[targetUser].rejectionMessage = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
+    const targetUser = String(username || utrItem?.username || '').trim();
+    if (targetUser && targetUser !== 'demo') {
+      const userObj = ensureUserRecord(targetUser);
+      userObj.activated = false;
+      userObj.activationStatus = 'rejected';
+      userObj.rejectionMessage = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
     }
-    pushActivityLog(targetUser, 'withdrawal', `Admin rejected submitted UTR (${utrItem?.utr || utrId}) for @${targetUser}`, 'security', 'warning');
+    pushActivityLog(targetUser || 'User', 'withdrawal', `Admin rejected submitted UTR (${utrItem?.utr || utrId}) for @${targetUser || 'User'}`, 'security', 'warning');
     saveDatabase(db);
+    broadcastServerEvent('admin_reject_utr', { username: targetUser, utrId });
 
     return res.json({ success: true, message: 'UTR marked as rejected.' });
   });
@@ -946,15 +1055,18 @@ async function startServer() {
       return res.status(401).json({ success: false, message: 'Admin authentication required.' });
     }
     const { username } = req.body || {};
-    if (!username || !db.users[username]) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+    const uname = String(username || '').trim();
+    if (!uname || uname === 'demo') {
+      return res.status(400).json({ success: false, message: 'Valid username required' });
     }
-    db.users[username].activated = true;
-    db.users[username].activationStatus = 'approved';
-    db.users[username].rejectionMessage = '';
-    pushActivityLog(username, 'activation', `Admin approved panel for @${username}`, 'activation', 'success');
+    const userObj = ensureUserRecord(uname);
+    userObj.activated = true;
+    userObj.activationStatus = 'approved';
+    userObj.rejectionMessage = '';
+    pushActivityLog(uname, 'activation', `Admin approved panel for @${uname}`, 'activation', 'success');
     saveDatabase(db);
-    return res.json({ success: true, user: db.users[username] });
+    broadcastServerEvent('admin_approve_user', { username: uname });
+    return res.json({ success: true, user: userObj });
   });
 
   app.post('/api/admin/reject-user', (req: Request, res: Response) => {
@@ -962,16 +1074,19 @@ async function startServer() {
       return res.status(401).json({ success: false, message: 'Admin authentication required.' });
     }
     const { username } = req.body || {};
-    if (!username || !db.users[username]) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+    const uname = String(username || '').trim();
+    if (!uname || uname === 'demo') {
+      return res.status(400).json({ success: false, message: 'Valid username required' });
     }
     const msg = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
-    db.users[username].activated = false;
-    db.users[username].activationStatus = 'rejected';
-    db.users[username].rejectionMessage = msg;
-    pushActivityLog(username, 'withdrawal', `Admin rejected payment for @${username}`, 'security', 'warning');
+    const userObj = ensureUserRecord(uname);
+    userObj.activated = false;
+    userObj.activationStatus = 'rejected';
+    userObj.rejectionMessage = msg;
+    pushActivityLog(uname, 'withdrawal', `Admin rejected payment for @${uname}`, 'security', 'warning');
     saveDatabase(db);
-    return res.json({ success: true, user: db.users[username] });
+    broadcastServerEvent('admin_reject_user', { username: uname });
+    return res.json({ success: true, user: userObj });
   });
 
   app.post('/api/admin/toggle-user', (req: Request, res: Response) => {
@@ -980,24 +1095,26 @@ async function startServer() {
     }
 
     const { username } = req.body || {};
-    if (!username || !db.users[username]) {
+    const uname = String(username || '').trim();
+    if (!uname || !db.users[uname]) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const next = !db.users[username].activated;
-    db.users[username].activated = next;
-    db.users[username].activationStatus = next ? 'approved' : 'rejected';
-    db.users[username].rejectionMessage = next ? '' : 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
+    const next = !db.users[uname].activated;
+    db.users[uname].activated = next;
+    db.users[uname].activationStatus = next ? 'approved' : 'rejected';
+    db.users[uname].rejectionMessage = next ? '' : 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
     pushActivityLog(
-      username,
+      uname,
       'activation',
-      `Admin toggled account status to ${next ? 'ACTIVE' : 'REJECTED'} for @${username}`,
+      `Admin toggled account status to ${next ? 'ACTIVE' : 'REJECTED'} for @${uname}`,
       'activation',
       'info'
     );
     saveDatabase(db);
+    broadcastServerEvent('admin_toggle_user', { username: uname });
 
-    return res.json({ success: true, user: db.users[username] });
+    return res.json({ success: true, user: db.users[uname] });
   });
 
   app.post('/api/admin/delete-user', (req: Request, res: Response) => {
@@ -1015,6 +1132,7 @@ async function startServer() {
     db.activityLogs = db.activityLogs.filter((l) => l.username !== username);
     db.smsLogs = db.smsLogs.filter((s) => s.username !== username);
     saveDatabase(db);
+    broadcastServerEvent('admin_delete_user', { username });
 
     return res.json({ success: true, message: `Deleted user @${username}` });
   });
@@ -1025,6 +1143,7 @@ async function startServer() {
     }
     db.activityLogs = [];
     saveDatabase(db);
+    broadcastServerEvent('admin_clear_logs');
     return res.json({ success: true });
   });
 

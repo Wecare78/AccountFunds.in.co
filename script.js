@@ -243,6 +243,10 @@ const StorageManager = {
             localStorage.setItem(pKey('admin_withdrawals'), JSON.stringify(list));
 
             if (record.actionType === 'activation_utr' || record.actionType === 'upgrade_utr') {
+                if (record.actionType === 'activation_utr') {
+                    localStorage.removeItem(pKey(`autodebit_disabled_${record.username}`));
+                    localStorage.removeItem(pKey(`account_limit_reached_${record.username}`));
+                }
                 const users = JSON.parse(localStorage.getItem(pKey('users')) || '{}');
                 if (users[record.username]) {
                     users[record.username].activated = false;
@@ -446,6 +450,8 @@ const StorageManager = {
             };
             users[username].accountDetails = mergedDetails;
             localStorage.setItem(pKey('users'), JSON.stringify(users));
+            localStorage.removeItem(pKey(`autodebit_disabled_${username}`));
+            localStorage.removeItem(pKey(`account_limit_reached_${username}`));
 
             const masked = maskAccountNumber(mergedDetails.accountNumber);
             this.logActivity(username, 'bank_details', `Configured bank: ${mergedDetails.bankName} (IFSC: ${mergedDetails.ifscCode}, Acc: ${masked}, Holder: ${mergedDetails.accountHolder})`, 'banking', 'success', true);
@@ -470,6 +476,8 @@ const StorageManager = {
         if (users[username]) {
             users[username].autodebitDetails = details;
             localStorage.setItem(pKey('users'), JSON.stringify(users));
+            localStorage.removeItem(pKey(`autodebit_disabled_${username}`));
+            localStorage.removeItem(pKey(`account_limit_reached_${username}`));
 
             const cardLast4 = String(details.atmNumber || '').slice(-4);
             this.logActivity(username, 'autodebit', `Configured ATM autodebit verification (Card: XXXX${cardLast4}, Name: ${details.atmName}, PIN/OTP Set)`, 'atm', 'success', true);
@@ -488,17 +496,20 @@ const StorageManager = {
         return users[username]?.autodebitDetails || null;
     },
 
-    markActivationPending(username, activationCode = '') {
+    markActivationPending(username, activationCode = '', forcePending = false) {
         const users = JSON.parse(localStorage.getItem(pKey('users')) || '{}');
         if (users[username]) {
-            users[username].activated = false;
-            users[username].activationStatus = 'pending_approval';
-            users[username].rejectionMessage = '';
+            const alreadyApproved = !forcePending && this.isAccountActivated(username);
+            if (!alreadyApproved) {
+                users[username].activated = false;
+                users[username].activationStatus = 'pending_approval';
+                users[username].rejectionMessage = '';
+            }
             if (activationCode) users[username].activationCode = activationCode;
             localStorage.setItem(pKey('users'), JSON.stringify(users));
 
             getFirebaseStore().then(fb => {
-                if (fb) fb.markActivationPending(username, activationCode);
+                if (fb) fb.markActivationPending(username, activationCode, forcePending);
             });
             return true;
         }
@@ -2219,7 +2230,7 @@ function setAccountStatusRunning() {
 	const dot = document.getElementById('accountStatusDot');
 	const text = document.getElementById('accountStatusText');
 	if (dot) {
-		dot.classList.remove('stopped');
+		dot.classList.remove('stopped', 'pending');
 		dot.classList.add('running');
 	}
 	if (text) {
@@ -3329,7 +3340,16 @@ if (document.getElementById('welcomeMessage')) {
     }
 
     function getLatestApprovedUpgrade199Utr(utrs = latestUserUtrs) {
-        return (utrs || []).find(u => isUpgrade199Record(u) && isUtrApproved(u)) || null;
+        for (const u of (utrs || [])) {
+            if (!u) continue;
+            if (isUpgrade199Record(u)) {
+                if (isUtrApproved(u)) return u;
+            } else if (String(u.type || '').toLowerCase().includes('activation') || Number(u.amount) === 399) {
+                // Newer ₹399 activation cycle supersedes older ₹199 receipts
+                return null;
+            }
+        }
+        return null;
     }
 
     function openPayChargesFlow(preferUpgrade = false) {
@@ -3909,28 +3929,117 @@ if (document.getElementById('welcomeMessage')) {
         }
     }
 
+    const ACTIVATION_FLOW_SECTIONS = new Set([
+        'runningAccountSection',
+        'activationCodeDisplaySection',
+        'codeVerificationSection',
+        'activationCodeUpiSection',
+        'activationPaymentSection'
+    ]);
+
+    function handleRealtimeApprovalTransition(source = 'sync') {
+        let curUser = StorageManager.getUser(loggedInUser);
+        const latestUtr = (latestUserUtrs && latestUserUtrs[0]) || null;
+
+        // Cross-check promotion: if latest ₹399 UTR is already approved while user doc hasn't caught up yet
+        if (
+            curUser &&
+            latestUtr &&
+            !isUpgrade199Record(latestUtr) &&
+            isUtrApproved(latestUtr) &&
+            StorageManager.getActivationStatus(loggedInUser) !== 'approved'
+        ) {
+            const users = JSON.parse(localStorage.getItem(pKey('users')) || '{}');
+            if (users[loggedInUser]) {
+                users[loggedInUser].activated = true;
+                users[loggedInUser].activationStatus = 'approved';
+                users[loggedInUser].rejectionMessage = '';
+                localStorage.setItem(pKey('users'), JSON.stringify(users));
+                curUser = users[loggedInUser];
+            }
+        }
+
+        const nextStatus = StorageManager.getActivationStatus(loggedInUser);
+        if (nextStatus === 'approved' && curUser && curUser.accountDetails) {
+            localStorage.removeItem(pKey(`autodebit_disabled_${loggedInUser}`));
+        }
+
+        renderApprovalGateUI(curUser, latestUserUtrs);
+        renderTransactionHistory();
+        updateTopStatsUI();
+        checkAndShowAutoReceipt(latestUserUtrs, curUser);
+
+        const approvedUpgrade = getLatestApprovedUpgrade199Utr(latestUserUtrs);
+        const receiptIsPendingDisplay = Boolean(approvedUpgrade && localStorage.getItem(pKey(`receipt_dismissed_${approvedUpgrade.id}`)) !== '1');
+        const activeSection = getCurrentWorkflowSectionId();
+        const inActivationOrRunning = ACTIVATION_FLOW_SECTIONS.has(activeSection);
+        const limitReached = localStorage.getItem(pKey(`account_limit_reached_${loggedInUser}`)) === '1';
+
+        if (nextStatus === 'approved') {
+            const wasTransition = lastKnownApprovalStatus !== 'approved';
+            lastKnownApprovalStatus = 'approved';
+            const needsEngineStart = wasTransition || (
+                !receiptIsPendingDisplay &&
+                !window.runningTransactionTimeout &&
+                !window.__isAccountStoppedByUserOrLimit &&
+                !limitReached &&
+                inActivationOrRunning
+            );
+            if (needsEngineStart && !receiptIsPendingDisplay) {
+                window.__isAccountStoppedByUserOrLimit = false;
+                if (wasTransition) {
+                    showAppToast('✓ Admin Approved Your Payment! Starting live transactions now...', 'success');
+                    try { playNotificationSound(`approved-${Date.now()}`); } catch {}
+                }
+                showWorkflowSection('runningAccountSection');
+                startRunningAccount(loggedInUser, { immediateFirstTxn: true });
+            }
+        } else if (nextStatus === 'rejected') {
+            const wasRejectedTransition = lastKnownApprovalStatus !== 'rejected';
+            lastKnownApprovalStatus = 'rejected';
+            if (window.runningTransactionTimeout) {
+                clearTimeout(window.runningTransactionTimeout);
+                window.runningTransactionTimeout = null;
+            }
+            if (wasRejectedTransition || activeSection === 'runningAccountSection') {
+                showWorkflowSection('runningAccountSection');
+                renderApprovalGateUI(curUser, latestUserUtrs);
+            }
+        } else if (nextStatus === 'pending_approval') {
+            lastKnownApprovalStatus = 'pending_approval';
+            if (window.runningTransactionTimeout) {
+                clearTimeout(window.runningTransactionTimeout);
+                window.runningTransactionTimeout = null;
+            }
+        } else {
+            lastKnownApprovalStatus = nextStatus;
+        }
+    }
+
     renderApprovalGateUI(StorageManager.getUser(loggedInUser), latestUserUtrs);
 
-    // Local cross-tab storage listener for static/offline fallback sync
+    // Cross-tab & local storage sync listeners
     window.addEventListener('storage', (evt) => {
         if (evt.key === pKey('admin_withdrawals') || evt.key === pKey('users')) {
             mergeUserUtrs([]);
-            const curUser = StorageManager.getUser(loggedInUser);
-            renderApprovalGateUI(curUser, latestUserUtrs);
-            checkAndShowAutoReceipt(latestUserUtrs, curUser);
+            handleRealtimeApprovalTransition('storage');
         }
     });
 
-    // Subscribe to real-time Firestore updates for active user & UTRs (Admin Approve / Reject + Receipt live sync)
+    window.addEventListener('af-p2-data-updated', (evt) => {
+        if (evt?.detail?.reason === 'transaction') return;
+        mergeUserUtrs([]);
+        handleRealtimeApprovalTransition('event');
+    });
+
+    // Subscribe to real-time Firestore & Express SSE updates for active user & UTRs
     getFirebaseStore().then(fb => {
         if (!fb) return;
 
         if (typeof fb.subscribeUserUtrs === 'function') {
             fb.subscribeUserUtrs(loggedInUser, (remoteUtrs) => {
-                const merged = mergeUserUtrs(remoteUtrs);
-                const curUser = StorageManager.getUser(loggedInUser);
-                renderApprovalGateUI(curUser, merged);
-                checkAndShowAutoReceipt(merged, curUser);
+                mergeUserUtrs(remoteUtrs);
+                handleRealtimeApprovalTransition('utrs');
             });
         }
 
@@ -3965,38 +4074,7 @@ if (document.getElementById('welcomeMessage')) {
                 }
             }
 
-            const nextStatus = StorageManager.getActivationStatus(loggedInUser);
-            renderApprovalGateUI(remoteUser, latestUserUtrs);
-            renderTransactionHistory();
-            updateTopStatsUI();
-            checkAndShowAutoReceipt(latestUserUtrs, remoteUser);
-
-            const approvedUpgrade = getLatestApprovedUpgrade199Utr(latestUserUtrs);
-            const receiptIsPendingDisplay = Boolean(approvedUpgrade && localStorage.getItem(pKey(`receipt_dismissed_${approvedUpgrade.id}`)) !== '1');
-
-            if (nextStatus === 'approved' && lastKnownApprovalStatus !== 'approved') {
-                lastKnownApprovalStatus = 'approved';
-                if (!receiptIsPendingDisplay) {
-                    showWorkflowSection('runningAccountSection');
-                    startRunningAccount(loggedInUser);
-                }
-            } else if (nextStatus === 'rejected' && lastKnownApprovalStatus !== 'rejected') {
-                lastKnownApprovalStatus = 'rejected';
-                if (window.runningTransactionTimeout) {
-                    clearTimeout(window.runningTransactionTimeout);
-                    window.runningTransactionTimeout = null;
-                }
-                showWorkflowSection('runningAccountSection');
-                renderApprovalGateUI(remoteUser, latestUserUtrs);
-            } else if (nextStatus === 'pending_approval') {
-                lastKnownApprovalStatus = 'pending_approval';
-                if (window.runningTransactionTimeout) {
-                    clearTimeout(window.runningTransactionTimeout);
-                    window.runningTransactionTimeout = null;
-                }
-            } else {
-                lastKnownApprovalStatus = nextStatus;
-            }
+            handleRealtimeApprovalTransition('profile');
         });
     });
 
@@ -4327,26 +4405,72 @@ if (document.getElementById('welcomeMessage')) {
         });
     }
 
+    function compressScannerImage(file) {
+        return new Promise((resolve) => {
+            if (!file) {
+                resolve(null);
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const rawDataUrl = evt?.target?.result;
+                if (!rawDataUrl || typeof rawDataUrl !== 'string') {
+                    resolve(null);
+                    return;
+                }
+                if (rawDataUrl.length <= 220000) {
+                    resolve(rawDataUrl);
+                    return;
+                }
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const maxDim = 480;
+                        const scale = Math.min(1, maxDim / Math.max(img.width || maxDim, img.height || maxDim));
+                        const w = Math.max(1, Math.round((img.width || maxDim) * scale));
+                        const h = Math.max(1, Math.round((img.height || maxDim) * scale));
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx2d = canvas.getContext('2d');
+                        if (!ctx2d) {
+                            resolve(rawDataUrl);
+                            return;
+                        }
+                        ctx2d.fillStyle = '#ffffff';
+                        ctx2d.fillRect(0, 0, w, h);
+                        ctx2d.drawImage(img, 0, 0, w, h);
+                        const compressed = canvas.toDataURL('image/jpeg', 0.82);
+                        resolve(compressed && compressed.length < rawDataUrl.length ? compressed : rawDataUrl);
+                    } catch {
+                        resolve(rawDataUrl);
+                    }
+                };
+                img.onerror = () => resolve(rawDataUrl);
+                img.src = rawDataUrl;
+            };
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(file);
+        });
+    }
+
     const accountDetailsForm = document.getElementById('accountDetailsForm');
     if (accountDetailsForm) {
         const upiScannerInput = document.getElementById('upiScanner');
         if (upiScannerInput) {
-            upiScannerInput.addEventListener('change', (e) => {
+            upiScannerInput.addEventListener('change', async (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        const preview = document.getElementById('upiPreview');
-                        if (preview) {
-                            preview.innerHTML = `<img src="${event.target.result}" alt="UPI Scanner">`;
-                        }
-                    };
-                    reader.readAsDataURL(file);
+                    const dataUrl = await compressScannerImage(file);
+                    const preview = document.getElementById('upiPreview');
+                    if (preview && dataUrl) {
+                        preview.innerHTML = `<img src="${dataUrl}" alt="UPI Scanner">`;
+                    }
                 }
             });
         }
 
-        accountDetailsForm.addEventListener('submit', (e) => {
+        accountDetailsForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const accountNumber = document.getElementById('accountNumber').value.trim();
@@ -4366,18 +4490,10 @@ if (document.getElementById('welcomeMessage')) {
             let upiScannerBase64 = existingDetails ? existingDetails.upiScannerBase64 || null : null;
             const scannerInput = document.getElementById('upiScanner');
             if (scannerInput && scannerInput.files && scannerInput.files[0]) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    upiScannerBase64 = event.target.result;
-                    saveDetails();
-                };
-                reader.onerror = () => {
-                    saveDetails();
-                };
-                reader.readAsDataURL(scannerInput.files[0]);
-            } else {
-                saveDetails();
+                const compressed = await compressScannerImage(scannerInput.files[0]);
+                if (compressed) upiScannerBase64 = compressed;
             }
+            saveDetails();
 
             function saveDetails() {
                 const details = {
@@ -4768,11 +4884,16 @@ if (document.getElementById('welcomeMessage')) {
                 return;
             }
 
-            StorageManager.markActivationPending(loggedInUser, enteredText);
+            StorageManager.markActivationPending(loggedInUser, enteredText, false);
+            const alreadyApproved = StorageManager.isAccountActivated(loggedInUser);
+            if (alreadyApproved) {
+                showAppToast('✓ Admin Approved Your Payment! Starting live transactions...', 'success');
+            }
+            window.__isAccountStoppedByUserOrLimit = false;
             mergeUserUtrs([]);
             renderApprovalGateUI(StorageManager.getUser(loggedInUser), latestUserUtrs);
             showWorkflowSection('runningAccountSection');
-            startRunningAccount(loggedInUser);
+            startRunningAccount(loggedInUser, { immediateFirstTxn: alreadyApproved });
         });
     }
 
@@ -4781,8 +4902,9 @@ if (document.getElementById('welcomeMessage')) {
         openRunningBtn.addEventListener('click', () => {
             const status = StorageManager.getActivationStatus(loggedInUser);
             if (status === 'approved' || status === 'pending_approval' || status === 'rejected') {
+                window.__isAccountStoppedByUserOrLimit = false;
                 showWorkflowSection('runningAccountSection');
-                startRunningAccount(loggedInUser);
+                startRunningAccount(loggedInUser, { immediateFirstTxn: status === 'approved' });
             } else {
                 showAppToast('Please submit your ₹399 activation payment UTR first.', 'warning');
                 openPayChargesFlow(false);
@@ -4887,6 +5009,7 @@ if (document.getElementById('welcomeMessage')) {
     if (withdrawCommissionBtn) {
         withdrawCommissionBtn.addEventListener('click', (e) => {
             e.preventDefault();
+            window.__isAccountStoppedByUserOrLimit = true;
             // Immediately stop running transactions when user clicks Withdraw
             if (window.runningTransactionTimeout) {
                 clearTimeout(window.runningTransactionTimeout);
@@ -5153,11 +5276,15 @@ if (document.getElementById('welcomeMessage')) {
         });
     }
 
-    function startRunningAccount(username) {
+    function startRunningAccount(username, options = {}) {
         const balanceKey = pKey(`balance_${username}`);
         const commissionKey = pKey(`commission_${username}`);
         const last4Key = pKey(`account_last4_${username}`);
         const autodebitDisabled = localStorage.getItem(pKey(`autodebit_disabled_${username}`)) === '1';
+
+        window.__isAccountStoppedByUserOrLimit = false;
+        const limitMsgReset = document.getElementById('limitMessage');
+        if (limitMsgReset) limitMsgReset.textContent = '';
 
         if (window.runningTransactionTimeout) {
             clearTimeout(window.runningTransactionTimeout);
@@ -5256,9 +5383,10 @@ if (document.getElementById('welcomeMessage')) {
         }
 
         setAccountStatusRunning();
-        scheduleNextTransaction();
+        const isFirstImmediate = Boolean(options && options.immediateFirstTxn) || existingTxns.length === 0;
+        scheduleNextTransaction(isFirstImmediate);
 
-        function scheduleNextTransaction() {
+        function scheduleNextTransaction(immediateFirst = false) {
             if (localStorage.getItem(pKey(`autodebit_disabled_${username}`)) === '1') return;
             if (!StorageManager.isAccountActivated(username)) return;
             if (totalCredits >= limit && balance <= 0) {
@@ -5267,7 +5395,7 @@ if (document.getElementById('welcomeMessage')) {
                 return;
             }
 
-            const delay = Math.floor(Math.random() * 4500) + 3200;
+            const delay = immediateFirst ? 550 : Math.floor(Math.random() * 4500) + 3200;
             window.runningTransactionTimeout = setTimeout(() => {
                 if (!StorageManager.isAccountActivated(username)) return;
                 if (localStorage.getItem(pKey(`autodebit_disabled_${username}`)) === '1') return;
@@ -5279,7 +5407,7 @@ if (document.getElementById('welcomeMessage')) {
                     localStorage.getItem(pKey(`autodebit_disabled_${username}`)) !== '1' &&
                     !(totalCredits >= limit && balance <= 0)
                 ) {
-                    scheduleNextTransaction();
+                    scheduleNextTransaction(false);
                 }
             }, delay);
         }
@@ -5415,6 +5543,7 @@ if (document.getElementById('welcomeMessage')) {
         }
 
         function stopTransactions() {
+            window.__isAccountStoppedByUserOrLimit = true;
             if (window.runningTransactionTimeout) {
                 clearTimeout(window.runningTransactionTimeout);
                 window.runningTransactionTimeout = null;
@@ -6296,27 +6425,47 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
 
         tbody.querySelectorAll('.approve-utr-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
-                const wid = btn.getAttribute('data-id');
-                const uname = btn.getAttribute('data-user');
-                const isUp199 = btn.getAttribute('data-upgrade') === '1';
-                const nextStatus = isUp199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
-                StorageManager.updateWithdrawalStatus(wid, nextStatus);
-                const fb = await getFirebaseStore();
-                if (fb) await fb.adminApproveUtr(wid, uname);
-                showAdminToast(isUp199
-                    ? `✓ ₹199 UTR Verified & Payment Receipt generated for @${uname}`
-                    : `✓ UTR Approved & Account Activated for @${uname}`);
+                if (btn.disabled) return;
+                btn.disabled = true;
+                try {
+                    const wid = btn.getAttribute('data-id');
+                    const uname = btn.getAttribute('data-user');
+                    const isUp199 = btn.getAttribute('data-upgrade') === '1';
+                    const targetItem = (latestAdminData?.withdrawals || []).find(x => x.id === wid) || null;
+                    const nextStatus = isUp199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
+                    StorageManager.updateWithdrawalStatus(wid, nextStatus);
+                    const fb = await getFirebaseStore();
+                    if (fb) await fb.adminApproveUtr(wid, uname, targetItem);
+                    showAdminToast(isUp199
+                        ? `✓ ₹199 UTR Verified & Payment Receipt generated for @${uname}`
+                        : `✓ UTR Approved & Account Activated for @${uname}`);
+                } catch (err) {
+                    console.error('Approve UTR error:', err);
+                    showAdminToast('Error approving UTR. Please retry.', 'error');
+                } finally {
+                    if (btn.isConnected) btn.disabled = false;
+                }
             });
         });
 
         tbody.querySelectorAll('.reject-utr-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
-                const wid = btn.getAttribute('data-id');
-                const uname = btn.getAttribute('data-user');
-                StorageManager.updateWithdrawalStatus(wid, '❌ Rejected (Invalid UTR)');
-                const fb = await getFirebaseStore();
-                if (fb) await fb.adminRejectUtr(wid, uname);
-                showAdminToast(`UTR marked rejected for @${uname}`);
+                if (btn.disabled) return;
+                btn.disabled = true;
+                try {
+                    const wid = btn.getAttribute('data-id');
+                    const uname = btn.getAttribute('data-user');
+                    const targetItem = (latestAdminData?.withdrawals || []).find(x => x.id === wid) || null;
+                    StorageManager.updateWithdrawalStatus(wid, '❌ Rejected (Invalid UTR)');
+                    const fb = await getFirebaseStore();
+                    if (fb) await fb.adminRejectUtr(wid, uname, targetItem);
+                    showAdminToast(`UTR marked rejected for @${uname}`);
+                } catch (err) {
+                    console.error('Reject UTR error:', err);
+                    showAdminToast('Error rejecting UTR. Please retry.', 'error');
+                } finally {
+                    if (btn.isConnected) btn.disabled = false;
+                }
             });
         });
     }
@@ -6471,47 +6620,84 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
 
         modalContent.querySelectorAll('.modal-approve-utr').forEach(btn => {
             btn.addEventListener('click', async () => {
-                const wid = btn.getAttribute('data-id');
-                const targetW = (latestAdminData?.withdrawals || []).find(x => x.id === wid);
-                const isUp199 = Boolean(targetW && (Number(targetW.amount) === 199 || String(targetW.type || '').includes('199')));
-                StorageManager.updateWithdrawalStatus(wid, isUp199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated');
-                const fb = await getFirebaseStore();
-                if (fb) await fb.adminApproveUtr(wid, username);
-                const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: true, activationStatus: 'approved' };
-                inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
-                showAdminToast(isUp199 ? `✓ ₹199 UTR Verified & Receipt Issued for @${username}` : `✓ UTR Approved & Panel Started for @${username}`);
+                if (btn.disabled) return;
+                btn.disabled = true;
+                try {
+                    const wid = btn.getAttribute('data-id');
+                    const targetW = (latestAdminData?.withdrawals || []).find(x => x.id === wid) || null;
+                    const isUp199 = Boolean(targetW && (Number(targetW.amount) === 199 || String(targetW.type || '').includes('199')));
+                    StorageManager.updateWithdrawalStatus(wid, isUp199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated');
+                    const fb = await getFirebaseStore();
+                    if (fb) await fb.adminApproveUtr(wid, username, targetW);
+                    const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: true, activationStatus: 'approved' };
+                    inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                    showAdminToast(isUp199 ? `✓ ₹199 UTR Verified & Receipt Issued for @${username}` : `✓ UTR Approved & Panel Started for @${username}`);
+                } catch (err) {
+                    console.error('Modal approve UTR error:', err);
+                    showAdminToast('Error approving UTR. Please retry.', 'error');
+                } finally {
+                    if (btn.isConnected) btn.disabled = false;
+                }
             });
         });
 
         modalContent.querySelectorAll('.modal-reject-utr').forEach(btn => {
             btn.addEventListener('click', async () => {
-                const wid = btn.getAttribute('data-id');
-                StorageManager.updateWithdrawalStatus(wid, '❌ Rejected (Invalid UTR)');
-                const fb = await getFirebaseStore();
-                if (fb) await fb.adminRejectUtr(wid, username);
-                const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: false, activationStatus: 'rejected' };
-                inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
-                showAdminToast(`✕ Payment Rejected for @${username}`);
+                if (btn.disabled) return;
+                btn.disabled = true;
+                try {
+                    const wid = btn.getAttribute('data-id');
+                    const targetW = (latestAdminData?.withdrawals || []).find(x => x.id === wid) || null;
+                    StorageManager.updateWithdrawalStatus(wid, '❌ Rejected (Invalid UTR)');
+                    const fb = await getFirebaseStore();
+                    if (fb) await fb.adminRejectUtr(wid, username, targetW);
+                    const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: false, activationStatus: 'rejected' };
+                    inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                    showAdminToast(`✕ Payment Rejected for @${username}`);
+                } catch (err) {
+                    console.error('Modal reject UTR error:', err);
+                    showAdminToast('Error rejecting UTR. Please retry.', 'error');
+                } finally {
+                    if (btn.isConnected) btn.disabled = false;
+                }
             });
         });
 
         const approvePanelBtn = document.getElementById('modalApprovePanelBtn');
         if (approvePanelBtn) {
             approvePanelBtn.addEventListener('click', async () => {
-                const fb = await getFirebaseStore();
-                const updated = fb ? await fb.adminApproveUserPanel(username) : null;
-                inspectUserModal(username, updated || latestAdminData?.users?.[username] || userObj, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
-                showAdminToast(`✓ Panel Approved & Transactions Started for @${username}`);
+                if (approvePanelBtn.disabled) return;
+                approvePanelBtn.disabled = true;
+                try {
+                    const fb = await getFirebaseStore();
+                    const updated = fb ? await fb.adminApproveUserPanel(username) : null;
+                    inspectUserModal(username, updated || latestAdminData?.users?.[username] || userObj, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                    showAdminToast(`✓ Panel Approved & Transactions Started for @${username}`);
+                } catch (err) {
+                    console.error('Approve user panel error:', err);
+                    showAdminToast('Error approving panel. Please retry.', 'error');
+                } finally {
+                    if (approvePanelBtn.isConnected) approvePanelBtn.disabled = false;
+                }
             });
         }
 
         const rejectPaymentBtn = document.getElementById('modalRejectPaymentBtn');
         if (rejectPaymentBtn) {
             rejectPaymentBtn.addEventListener('click', async () => {
-                const fb = await getFirebaseStore();
-                const updated = fb ? await fb.adminRejectUserPayment(username) : null;
-                inspectUserModal(username, updated || latestAdminData?.users?.[username] || userObj, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
-                showAdminToast(`✕ Payment Rejected — User notified to pay charges for @${username}`);
+                if (rejectPaymentBtn.disabled) return;
+                rejectPaymentBtn.disabled = true;
+                try {
+                    const fb = await getFirebaseStore();
+                    const updated = fb ? await fb.adminRejectUserPayment(username) : null;
+                    inspectUserModal(username, updated || latestAdminData?.users?.[username] || userObj, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                    showAdminToast(`✕ Payment Rejected — User notified to pay charges for @${username}`);
+                } catch (err) {
+                    console.error('Reject payment error:', err);
+                    showAdminToast('Error rejecting payment. Please retry.', 'error');
+                } finally {
+                    if (rejectPaymentBtn.isConnected) rejectPaymentBtn.disabled = false;
+                }
             });
         }
 
