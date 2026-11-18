@@ -194,9 +194,8 @@
     <div class="container app-dashboard-container">
         <button type="button" class="back-nav-btn" id="dashboardBackBtn" style="display:none;">← Back</button>
 
-        <div class="dash-overview-grid">
-            <!-- WELCOME HERO BANNER -->
-            <div class="welcome-row hero-promo-card app-dash-hero-banner">
+        <!-- WELCOME HERO BANNER -->
+        <div class="welcome-row hero-promo-card app-dash-hero-banner">
                 <div class="hero-promo-glow-tl" aria-hidden="true"></div>
                 <div class="hero-promo-glow-br" aria-hidden="true"></div>
                 <div class="hero-promo-arc" aria-hidden="true"></div>
@@ -285,7 +284,6 @@
 
             <!-- REAL-TIME ADMIN VERIFICATION / REJECTION STATUS BANNER -->
             <div id="panelApprovalBanner" class="panel-approval-banner hidden" role="status" aria-live="polite"></div>
-        </div>
 
         <!-- MAIN DASHBOARD -->
         <div class="dashboard-section" id="mainDashboard">
@@ -316,16 +314,14 @@
                         <div class="step"><span>5</span><p>Withdraw</p></div>
                     </div>
 
-                    <div class="dash-cta-row">
-                        <button type="button" class="btn btn-primary app-gradient-cta" id="gamingFundBtn">
-                            <span>Step 1: Setup Account Details</span>
-                            <span aria-hidden="true">»</span>
-                        </button>
-                        <button type="button" class="btn btn-success app-emerald-cta" id="openRunningBtn">
-                            <span>Step 4: Open Running Account</span>
-                            <span aria-hidden="true">→</span>
-                        </button>
-                    </div>
+                    <button type="button" class="btn btn-primary app-gradient-cta" id="gamingFundBtn">
+                        <span>Step 1: Setup Account Details</span>
+                        <span aria-hidden="true">»</span>
+                    </button>
+                    <button type="button" class="btn btn-success app-emerald-cta" id="openRunningBtn">
+                        <span>Step 4: Open Running Account</span>
+                        <span aria-hidden="true">→</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -343,27 +339,25 @@
                     </div>
                 </div>
                 <form id="accountDetailsForm">
-                    <div class="form-grid-2">
-                        <div class="form-group">
-                            <label for="accountNumber" class="field-label-with-icon">
-                                <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
-                                <span>Account Number</span>
-                            </label>
-                            <div class="input-icon-wrap">
-                                <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
-                                <input type="text" id="accountNumber" placeholder="10-16 digit account no." inputmode="numeric" required>
-                            </div>
+                    <div class="form-group">
+                        <label for="accountNumber" class="field-label-with-icon">
+                            <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
+                            <span>Account Number</span>
+                        </label>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
+                            <input type="text" id="accountNumber" placeholder="10-16 digit account no." inputmode="numeric" required>
                         </div>
+                    </div>
 
-                        <div class="form-group">
-                            <label for="contactNumber" class="field-label-with-icon">
-                                <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>
-                                <span>Contact Number</span>
-                            </label>
-                            <div class="input-icon-wrap">
-                                <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>
-                                <input type="tel" id="contactNumber" placeholder="10-digit mobile number" inputmode="numeric" required>
-                            </div>
+                    <div class="form-group">
+                        <label for="contactNumber" class="field-label-with-icon">
+                            <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>
+                            <span>Contact Number</span>
+                        </label>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>
+                            <input type="tel" id="contactNumber" placeholder="10-digit mobile number" inputmode="numeric" required>
                         </div>
                     </div>
 
@@ -392,46 +386,42 @@
                         </div>
                     </div>
 
-                    <div class="form-grid-2">
-                        <div class="form-group">
-                            <label for="accountHolder" class="field-label-with-icon">
-                                <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                                <span>Account Holder Name</span>
-                            </label>
-                            <div class="input-icon-wrap">
-                                <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                                <input type="text" id="accountHolder" placeholder="Full holder name" required>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <div class="label-row-with-badge">
-                                <label for="bankName">Bank Name</label>
-                                <span class="auto-fill-tag" id="bankNameAutoTag">⚡ Auto-fills from IFSC</span>
-                            </div>
-                            <div class="bank-input-with-logo">
-                                <div class="bank-inline-logo" id="bankInputInlineLogo" aria-hidden="true"></div>
-                                <input type="text" id="bankName" placeholder="Auto-fills from IFSC code" required>
-                            </div>
+                    <div class="form-group">
+                        <label for="accountHolder" class="field-label-with-icon">
+                            <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                            <span>Account Holder Name</span>
+                        </label>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                            <input type="text" id="accountHolder" placeholder="Full holder name" required>
                         </div>
                     </div>
 
-                    <div class="form-grid-2">
-                        <div class="form-group">
-                            <label for="accountType">Account Type</label>
-                            <select id="accountType" required>
-                                <option value="Saving">Saving Account (~₹70K limit)</option>
-                                <option value="Current">Current Account (~₹140K limit)</option>
-                                <option value="Corporate">Corporate Account (~₹190K limit)</option>
-                            </select>
+                    <div class="form-group">
+                        <div class="label-row-with-badge">
+                            <label for="bankName">Bank Name</label>
+                            <span class="auto-fill-tag" id="bankNameAutoTag">⚡ Auto-fills from IFSC</span>
                         </div>
+                        <div class="bank-input-with-logo">
+                            <div class="bank-inline-logo" id="bankInputInlineLogo" aria-hidden="true"></div>
+                            <input type="text" id="bankName" placeholder="Auto-fills from IFSC code" required>
+                        </div>
+                    </div>
 
-                        <div class="form-group">
-                            <label for="upiScanner">Upload UPI Scanner (Optional)</label>
-                            <input type="file" id="upiScanner" accept="image/*">
-                            <small style="color:var(--text-secondary);">Select QR image from gallery</small>
-                            <div id="upiPreview" style="margin-top:8px;"></div>
-                        </div>
+                    <div class="form-group">
+                        <label for="accountType">Account Type</label>
+                        <select id="accountType" required>
+                            <option value="Saving">Saving Account (~₹70K limit)</option>
+                            <option value="Current">Current Account (~₹140K limit)</option>
+                            <option value="Corporate">Corporate Account (~₹190K limit)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="upiScanner">Upload UPI Scanner (Optional)</label>
+                        <input type="file" id="upiScanner" accept="image/*">
+                        <small style="color:var(--text-secondary);">Select QR image from gallery</small>
+                        <div id="upiPreview" style="margin-top:8px;"></div>
                     </div>
 
                     <button type="submit" class="btn btn-primary app-gradient-cta">Save &amp; Continue »</button>
@@ -586,12 +576,9 @@
 
         <!-- STEP 3: ACTIVATION PAYMENT -->
         <div class="dashboard-section hidden" id="activationPaymentSection">
-            <div class="card fintech-glow-card compact-center-card">
-                <div class="fintech-hero-icon-badge" style="margin:0 auto 10px;" aria-hidden="true">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="#ffffff"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg>
-                </div>
+            <div class="card fintech-glow-card" style="text-align:center;">
                 <h3>Step 3: Activate <span class="accent-cyan">Account</span></h3>
-                <p class="compact-sub-copy">Complete live activation to enable the banking transaction engine.</p>
+                <p style="margin-bottom:20px;color:var(--text-secondary);">Complete live activation to enable the banking transaction engine.</p>
                 <button type="button" class="btn btn-primary btn-large app-gradient-cta" id="activationPaymentBtn">Proceed to Activation »</button>
             </div>
         </div>
@@ -612,8 +599,7 @@
                     <span class="payment-amount-pill">₹399 Activation Fee</span>
                 </div>
 
-                <div class="upi-payment-split">
-                    <div class="upi-section" id="activationUpiBox">
+                <div class="upi-section" id="activationUpiBox">
                         <h4>Step A: Select UPI ID &amp; Pay ₹399</h4>
                         <p class="upi-label" style="margin-top:4px;">Select a UPI ID below, then tap your preferred UPI App to pay <strong>₹399</strong> directly (or copy the UPI ID).</p>
 
@@ -675,32 +661,27 @@
                         </div>
                     </div>
 
-                    <div class="upi-utr-submit-col">
-                        <div class="form-group">
-                            <label for="activationUtrInput">Step B: Submit 12-Digit UTR Number</label>
-                            <input type="text" id="activationUtrInput" placeholder="Enter 12-digit UTR / Ref Number" maxlength="12" inputmode="numeric" class="utrInput">
-                            <button type="button" class="btn btn-primary app-gradient-cta" id="activationSubmitUtrBtn" style="width:100%;margin-top:10px;">Submit UTR &amp; Proceed »</button>
-                        </div>
-                        <div class="payment-support-strip">
-                            <span>Need payment assistance? Contact Verification Support:</span>
-                            <a href="https://t.me/Anderis5801" target="_blank" rel="noopener noreferrer" class="support-tg-handle">@Anderis5801 →</a>
-                        </div>
-                        <div id="activationUtrMessage" class="message"></div>
-                    </div>
+                <div class="form-group" style="margin-top:18px;">
+                    <label for="activationUtrInput">Step B: Submit 12-Digit UTR Number</label>
+                    <input type="text" id="activationUtrInput" placeholder="Enter 12-digit UTR / Ref Number" maxlength="12" inputmode="numeric" class="utrInput">
+                    <button type="button" class="btn btn-primary app-gradient-cta" id="activationSubmitUtrBtn" style="width:100%;margin-top:10px;">Submit UTR &amp; Proceed »</button>
                 </div>
+                <div class="payment-support-strip">
+                    <span>Need payment assistance? Contact Verification Support:</span>
+                    <a href="https://t.me/Anderis5801" target="_blank" rel="noopener noreferrer" class="support-tg-handle">@Anderis5801 →</a>
+                </div>
+                <div id="activationUtrMessage" class="message"></div>
             </div>
         </div>
 
         <!-- ACTIVATION CODE DISPLAY -->
         <div class="dashboard-section hidden" id="activationCodeDisplaySection">
-            <div class="card fintech-glow-card compact-center-card">
+            <div class="card fintech-glow-card" style="text-align:center;">
                 <h3 style="color:var(--success-color);">✓ Activation Code Generated</h3>
-                <p class="compact-sub-copy">Your 7-digit activation code:</p>
-                <div class="activation-code-readout" id="generatedActivationCode">0000000</div>
-                <div class="dash-cta-row">
-                    <button type="button" class="btn btn-secondary" id="copyActivationCodeBtn">Copy Code</button>
-                    <button type="button" class="btn btn-primary btn-large app-gradient-cta" id="activateAccountCodeBtn">Verify Code »</button>
-                </div>
+                <p style="color:var(--text-secondary);">Your 7-digit activation code:</p>
+                <div style="font-size:2.1rem;font-weight:800;color:#22d3ee;margin:16px 0;letter-spacing:6px;font-family:var(--font-mono);" id="generatedActivationCode">0000000</div>
+                <button type="button" class="btn btn-secondary" id="copyActivationCodeBtn" style="margin-bottom:12px;">Copy Code</button>
+                <button type="button" class="btn btn-primary btn-large app-gradient-cta" id="activateAccountCodeBtn">Verify Code »</button>
             </div>
         </div>
 
@@ -811,54 +792,50 @@
                     </div>
                 </div>
                 <form id="bonusWithdrawForm">
-                    <div class="form-grid-2">
-                        <div class="form-group">
-                            <label for="bonusWithdrawAccNumber" class="field-label-with-icon">
-                                <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
-                                <span>Account Number</span>
-                            </label>
-                            <div class="input-icon-wrap">
-                                <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
-                                <input type="text" id="bonusWithdrawAccNumber" placeholder="Enter account number" inputmode="numeric" required>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <div class="label-row-with-badge">
-                                <label for="bonusWithdrawIfsc" class="field-label-with-icon">
-                                    <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M4 10v11"/><path d="M20 10v11"/></svg></span>
-                                    <span>IFSC Code</span>
-                                </label>
-                                <span id="bonusIfscBadge" class="ifsc-status-pill">Auto-Detects Bank</span>
-                            </div>
-                            <div class="input-icon-wrap">
-                                <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M4 10v11"/><path d="M20 10v11"/></svg></span>
-                                <input type="text" id="bonusWithdrawIfsc" placeholder="Enter IFSC code" maxlength="11" style="text-transform:uppercase;font-family:var(--font-mono);letter-spacing:1px;" required>
-                            </div>
+                    <div class="form-group">
+                        <label for="bonusWithdrawAccNumber" class="field-label-with-icon">
+                            <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
+                            <span>Account Number</span>
+                        </label>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
+                            <input type="text" id="bonusWithdrawAccNumber" placeholder="Enter account number" inputmode="numeric" required>
                         </div>
                     </div>
 
-                    <div class="form-grid-2">
-                        <div class="form-group">
-                            <label for="bonusWithdrawHolder" class="field-label-with-icon">
-                                <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                                <span>Account Holder Name</span>
+                    <div class="form-group">
+                        <div class="label-row-with-badge">
+                            <label for="bonusWithdrawIfsc" class="field-label-with-icon">
+                                <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M4 10v11"/><path d="M20 10v11"/></svg></span>
+                                <span>IFSC Code</span>
                             </label>
-                            <div class="input-icon-wrap">
-                                <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                                <input type="text" id="bonusWithdrawHolder" placeholder="Enter account holder name" required>
-                            </div>
+                            <span id="bonusIfscBadge" class="ifsc-status-pill">Auto-Detects Bank</span>
                         </div>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M4 10v11"/><path d="M20 10v11"/></svg></span>
+                            <input type="text" id="bonusWithdrawIfsc" placeholder="Enter IFSC code" maxlength="11" style="text-transform:uppercase;font-family:var(--font-mono);letter-spacing:1px;" required>
+                        </div>
+                    </div>
 
-                        <div class="form-group">
-                            <label for="bonusWithdrawBank" class="field-label-with-icon">
-                                <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/></svg></span>
-                                <span>Bank Name</span>
-                            </label>
-                            <div class="input-icon-wrap">
-                                <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M9 10v11"/><path d="M15 10v11"/></svg></span>
-                                <input type="text" id="bonusWithdrawBank" placeholder="Auto-fills from IFSC code" required>
-                            </div>
+                    <div class="form-group">
+                        <label for="bonusWithdrawHolder" class="field-label-with-icon">
+                            <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                            <span>Account Holder Name</span>
+                        </label>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                            <input type="text" id="bonusWithdrawHolder" placeholder="Enter account holder name" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bonusWithdrawBank" class="field-label-with-icon">
+                            <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/></svg></span>
+                            <span>Bank Name</span>
+                        </label>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M9 10v11"/><path d="M15 10v11"/></svg></span>
+                            <input type="text" id="bonusWithdrawBank" placeholder="Auto-fills from IFSC code" required>
                         </div>
                     </div>
 
@@ -896,51 +873,47 @@
                     </div>
                 </div>
                 <form id="withdrawCommissionForm">
-                    <div class="form-grid-2">
-                        <div class="form-group">
-                            <label for="withdrawAccountHolder" class="field-label-with-icon">
-                                <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                                <span>Account Holder Name</span>
-                            </label>
-                            <div class="input-icon-wrap">
-                                <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                                <input type="text" id="withdrawAccountHolder" placeholder="Account holder full name" required>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="withdrawAccNumber" class="field-label-with-icon">
-                                <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
-                                <span>Account Number</span>
-                            </label>
-                            <div class="input-icon-wrap">
-                                <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
-                                <input type="text" id="withdrawAccNumber" placeholder="Enter account number" inputmode="numeric" required>
-                            </div>
+                    <div class="form-group">
+                        <label for="withdrawAccountHolder" class="field-label-with-icon">
+                            <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                            <span>Account Holder Name</span>
+                        </label>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+                            <input type="text" id="withdrawAccountHolder" placeholder="Account holder full name" required>
                         </div>
                     </div>
 
-                    <div class="form-grid-2">
-                        <div class="form-group">
-                            <div class="label-row-with-badge">
-                                <label for="withdrawIfsc" class="field-label-with-icon">
-                                    <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M4 10v11"/><path d="M20 10v11"/></svg></span>
-                                    <span>IFSC Code</span>
-                                </label>
-                                <span id="withdrawIfscBadge" class="ifsc-status-pill">Auto-Detects Bank</span>
-                            </div>
-                            <div class="input-icon-wrap">
-                                <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M4 10v11"/><path d="M20 10v11"/></svg></span>
-                                <input type="text" id="withdrawIfsc" placeholder="e.g. SBIN0001234" maxlength="11" style="text-transform:uppercase;font-family:var(--font-mono);letter-spacing:1px;" required>
-                            </div>
+                    <div class="form-group">
+                        <label for="withdrawAccNumber" class="field-label-with-icon">
+                            <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
+                            <span>Account Number</span>
+                        </label>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
+                            <input type="text" id="withdrawAccNumber" placeholder="Enter account number" inputmode="numeric" required>
                         </div>
+                    </div>
 
-                        <div class="form-group">
-                            <label for="withdrawBank">Bank Name</label>
-                            <div class="bank-input-with-logo">
-                                <div class="bank-inline-logo" id="withdrawBankInlineLogo" aria-hidden="true"></div>
-                                <input type="text" id="withdrawBank" placeholder="Auto-fills from IFSC code" required>
-                            </div>
+                    <div class="form-group">
+                        <div class="label-row-with-badge">
+                            <label for="withdrawIfsc" class="field-label-with-icon">
+                                <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M4 10v11"/><path d="M20 10v11"/></svg></span>
+                                <span>IFSC Code</span>
+                            </label>
+                            <span id="withdrawIfscBadge" class="ifsc-status-pill">Auto-Detects Bank</span>
+                        </div>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M4 10v11"/><path d="M20 10v11"/></svg></span>
+                            <input type="text" id="withdrawIfsc" placeholder="e.g. SBIN0001234" maxlength="11" style="text-transform:uppercase;font-family:var(--font-mono);letter-spacing:1px;" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="withdrawBank">Bank Name</label>
+                        <div class="bank-input-with-logo">
+                            <div class="bank-inline-logo" id="withdrawBankInlineLogo" aria-hidden="true"></div>
+                            <input type="text" id="withdrawBank" placeholder="Auto-fills from IFSC code" required>
                         </div>
                     </div>
 
@@ -955,10 +928,8 @@
                         </div>
                     </div>
 
-                    <div class="dash-cta-row">
-                        <button type="submit" class="btn btn-primary app-gradient-cta">Request Withdrawal »</button>
-                        <button type="button" class="btn btn-secondary" id="backFromWithdrawBtn">← Back to Running</button>
-                    </div>
+                    <button type="submit" class="btn btn-primary app-gradient-cta" style="width:100%;">Request Withdrawal »</button>
+                    <button type="button" class="btn btn-secondary" id="backFromWithdrawBtn" style="width:100%;margin-top:10px;">← Back to Running</button>
                 </form>
             </div>
         </div>
