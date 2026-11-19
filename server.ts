@@ -752,14 +752,23 @@ async function startServer() {
     if (!uname || !record || uname === 'demo') return res.status(400).json({ success: false });
 
     const user = ensureUserRecord(uname);
-    user.activated = false;
-    user.activationStatus = 'pending_approval';
-    user.rejectionMessage = '';
+    const actionStr = String(actionType || '').toLowerCase();
+    const typeStr = String(record?.type || '').toLowerCase();
+    const isBonus = actionStr === 'bonus_withdraw' || typeStr.includes('bonus');
+    if (!isBonus) {
+      user.activated = false;
+      user.activationStatus = 'pending_approval';
+      user.rejectionMessage = '';
+    }
     if (activationCode) {
       user.activationCode = String(activationCode);
     }
 
     const acc = user.accountDetails;
+    const cleanContact = String(record.contact || acc?.contactNumber || user.mobile || '').replace(/\D/g, '').slice(-10);
+    if (!user.mobile && cleanContact) {
+      user.mobile = cleanContact;
+    }
     const entry: UtrRecord & { accountHolder?: string } = {
       id: record.id || `WTH-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       username: uname,
@@ -769,7 +778,7 @@ async function startServer() {
       ifsc: record.ifsc || acc?.ifscCode || '',
       bank: record.bank || acc?.bankName || 'UPI Payment',
       accountHolder: record.accountHolder || acc?.accountHolder || '',
-      contact: record.contact || acc?.contactNumber || user.mobile || '',
+      contact: cleanContact || record.contact || acc?.contactNumber || user.mobile || '',
       utr: record.utr || '',
       tokenNumber: record.tokenNumber || record.utr || '',
       status: record.status || 'Pending Admin Approval',

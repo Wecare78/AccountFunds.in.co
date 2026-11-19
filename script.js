@@ -4156,6 +4156,8 @@ if (document.getElementById('welcomeMessage')) {
                 accNumber: accNumber,
                 ifsc: ifsc,
                 bank: bank,
+                accountHolder: holder,
+                contact: (StorageManager.getAccountDetails(loggedInUser)?.contactNumber || StorageManager.getUser(loggedInUser)?.mobile || ''),
                 status: 'Successfully Credited',
                 actionType: 'bonus_withdraw',
                 activityText: `Withdrew ₹799 welcome bonus to ${bank} (${maskAccountNumber(accNumber)}, IFSC: ${ifsc})`
@@ -5116,6 +5118,18 @@ if (document.getElementById('welcomeMessage')) {
                         </div>
 
                         <div class="copyMessage" id="upgradeCopyMsg_199"></div>
+
+                        <div class="upi-qr-pay-card" aria-label="Scan QR Code to Pay ₹199">
+                            <div class="upi-qr-thumb">
+                                <img src="./assets/aistudio/scanner_bd369b56.jpg" alt="Scan QR Code to Pay ₹199" loading="eager">
+                            </div>
+                            <div class="upi-qr-details">
+                                <span class="upi-qr-badge">OR SCAN &amp; PAY ₹199</span>
+                                <strong>Scan QR via Any UPI App</strong>
+                                <small>PhonePe • GPay • Paytm • BHIM</small>
+                                <span class="upi-qr-tip">After payment, enter 12-digit UTR below</span>
+                            </div>
+                        </div>
 
                         <div class="upi-apps-launcher" id="upgradeUpiAppsLauncher">
                             <div class="upi-apps-header">

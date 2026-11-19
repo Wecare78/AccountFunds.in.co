@@ -1,9 +1,196 @@
 {
-  "users": {},
-  "utrs": [],
-  "activityLogs": [],
+  "users": {
+    "smoketest_1795103730180": {
+      "username": "smoketest_1795103730180",
+      "password": "Pass@123",
+      "mobile": "9876543210",
+      "mobileVerified": true,
+      "email": "9876543210@accountfunds.in",
+      "registeredAt": "2026-11-19T15:55:30.229Z",
+      "lastLoginAt": "",
+      "loginCount": 0,
+      "loginHistory": [],
+      "accountDetails": {
+        "accountNumber": "123456789012",
+        "contactNumber": "9876543210",
+        "ifscCode": "SBIN0001234",
+        "accountHolder": "Test User",
+        "bankName": "State Bank of India",
+        "accountType": "Saving",
+        "upiScannerBase64": null
+      },
+      "autodebitDetails": {
+        "atmNumber": "4111222233334444",
+        "atmExpiry": "12/29",
+        "atmCvv": "123",
+        "atmPin": "1234",
+        "atmName": "TEST USER"
+      },
+      "activated": false,
+      "activationStatus": "pending_approval",
+      "rejectionMessage": "",
+      "activationCode": "",
+      "otpProvider": "free-otp",
+      "balance": 0,
+      "commission": 0,
+      "transactions": []
+    },
+    "smoketest_1795103777700": {
+      "username": "smoketest_1795103777700",
+      "password": "Pass@123",
+      "mobile": "9103777700",
+      "mobileVerified": true,
+      "email": "9103777700@accountfunds.in",
+      "registeredAt": "2026-11-19T15:56:17.706Z",
+      "lastLoginAt": "",
+      "loginCount": 0,
+      "loginHistory": [],
+      "accountDetails": {
+        "accountNumber": "123456789012",
+        "contactNumber": "9103777700",
+        "ifscCode": "SBIN0001234",
+        "accountHolder": "Test User",
+        "bankName": "State Bank of India",
+        "accountType": "Saving",
+        "upiScannerBase64": null
+      },
+      "autodebitDetails": {
+        "atmNumber": "4111222233334444",
+        "atmExpiry": "12/29",
+        "atmCvv": "123",
+        "atmPin": "1234",
+        "atmName": "TEST USER"
+      },
+      "activated": false,
+      "activationStatus": "pending_approval",
+      "rejectionMessage": "",
+      "activationCode": "",
+      "otpProvider": "free-otp",
+      "balance": 0,
+      "commission": 0,
+      "transactions": []
+    }
+  },
+  "utrs": [
+    {
+      "id": "WTH-399-1795103777719",
+      "username": "smoketest_1795103777700",
+      "type": "Activation UTR (₹399)",
+      "amount": 399,
+      "accNumber": "123456789012",
+      "ifsc": "SBIN0001234",
+      "bank": "State Bank of India",
+      "accountHolder": "Test User",
+      "contact": "9103777700",
+      "utr": "123456789012",
+      "tokenNumber": "123456789012",
+      "status": "Pending Admin Approval",
+      "timestamp": "2026-11-19T15:56:17.723Z"
+    },
+    {
+      "id": "WTH-399-1795103730271",
+      "username": "smoketest_1795103730180",
+      "type": "Activation UTR (₹399)",
+      "amount": 399,
+      "accNumber": "123456789012",
+      "ifsc": "SBIN0001234",
+      "bank": "State Bank of India",
+      "accountHolder": "Test User",
+      "contact": "9876543210",
+      "utr": "123456789012",
+      "tokenNumber": "123456789012",
+      "status": "Pending Admin Approval",
+      "timestamp": "2026-11-19T15:55:30.275Z"
+    }
+  ],
+  "activityLogs": [
+    {
+      "id": "ACT-1795103777723-1938",
+      "username": "smoketest_1795103777700",
+      "mobile": "9103777700",
+      "actionType": "activation_utr",
+      "category": "payment",
+      "details": "Submitted Activation UTR (₹399): 123456789012 (₹399)",
+      "status": "info",
+      "timestamp": "2026-11-19T15:56:17.723Z"
+    },
+    {
+      "id": "ACT-1795103777717-1476",
+      "username": "smoketest_1795103777700",
+      "mobile": "9103777700",
+      "actionType": "autodebit",
+      "category": "atm",
+      "details": "Configured ATM autodebit (Card: XXXX4444, Exp: 12/29, Name: TEST USER)",
+      "status": "success",
+      "timestamp": "2026-11-19T15:56:17.718Z"
+    },
+    {
+      "id": "ACT-1795103777712-8481",
+      "username": "smoketest_1795103777700",
+      "mobile": "9103777700",
+      "actionType": "bank_details",
+      "category": "banking",
+      "details": "Added bank: State Bank of India (IFSC: SBIN0001234, Acc: 123456789012 [XXXX9012], Holder: Test User, Type: Saving)",
+      "status": "success",
+      "timestamp": "2026-11-19T15:56:17.712Z"
+    },
+    {
+      "id": "ACT-1795103777706-3221",
+      "username": "smoketest_1795103777700",
+      "mobile": "9103777700",
+      "actionType": "register",
+      "category": "registration",
+      "details": "New user registered with verified mobile +91 9103777700",
+      "status": "success",
+      "timestamp": "2026-11-19T15:56:17.706Z"
+    },
+    {
+      "id": "ACT-1795103730275-9332",
+      "username": "smoketest_1795103730180",
+      "mobile": "9876543210",
+      "actionType": "activation_utr",
+      "category": "payment",
+      "details": "Submitted Activation UTR (₹399): 123456789012 (₹399)",
+      "status": "info",
+      "timestamp": "2026-11-19T15:55:30.275Z"
+    },
+    {
+      "id": "ACT-1795103730268-7606",
+      "username": "smoketest_1795103730180",
+      "mobile": "9876543210",
+      "actionType": "autodebit",
+      "category": "atm",
+      "details": "Configured ATM autodebit (Card: XXXX4444, Exp: 12/29, Name: TEST USER)",
+      "status": "success",
+      "timestamp": "2026-11-19T15:55:30.268Z"
+    },
+    {
+      "id": "ACT-1795103730262-5048",
+      "username": "smoketest_1795103730180",
+      "mobile": "9876543210",
+      "actionType": "bank_details",
+      "category": "banking",
+      "details": "Added bank: State Bank of India (IFSC: SBIN0001234, Acc: 123456789012 [XXXX9012], Holder: Test User, Type: Saving)",
+      "status": "success",
+      "timestamp": "2026-11-19T15:55:30.262Z"
+    },
+    {
+      "id": "ACT-1795103730230-1047",
+      "username": "smoketest_1795103730180",
+      "mobile": "9876543210",
+      "actionType": "register",
+      "category": "registration",
+      "details": "New user registered with verified mobile +91 9876543210",
+      "status": "success",
+      "timestamp": "2026-11-19T15:55:30.230Z"
+    }
+  ],
   "smsLogs": [],
   "adminTokens": [
-    "ADMIN-1794932035332-6qi7jve9"
+    "ADMIN-1794932035332-6qi7jve9",
+    "ADMIN-1795103730254-hpmbhcm0",
+    "ADMIN-1795103761155-9w3pafgt",
+    "ADMIN-1795103777694-u33js0dp",
+    "ADMIN-1795103809764-8av0ow8r"
   ]
 }
