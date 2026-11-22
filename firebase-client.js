@@ -35,6 +35,19 @@ const sanitizeSafeId = (raw, prefix) =>
 const toDocId = (u) =>
   (String(u || '').trim().replace(/[^a-zA-Z0-9_.-]/g, '_') || `user_${Date.now()}`).slice(0, 120);
 
+function generateUniqueReferralCode(username) {
+  const clean = String(username || '').trim();
+  const alpha = clean.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3).padEnd(3, 'X');
+  let h = 2166136261;
+  const seed = clean.toLowerCase();
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const suffix = (h >>> 0).toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '').padStart(5, '0').slice(-5);
+  return `AF${alpha}${suffix}`.slice(0, 12);
+}
+
 // --------------------------------------------
 // Cross-Tab Realtime Channel
 // --------------------------------------------
@@ -671,11 +684,19 @@ function buildValidFirestoreUser(rawUser, overrides = {}) {
     balance: safeNum(base.balance),
     commission: safeNum(base.commission),
     transactions: Array.isArray(base.transactions) ? base.transactions.slice(-200) : [],
+    referralCode: String(base.referralCode || generateUniqueReferralCode(uname)).trim().toUpperCase().slice(0, 32),
+    referredByCode: String(base.referredByCode || '').trim().toUpperCase().slice(0, 32),
+    referredBy: String(base.referredBy || '').trim().slice(0, 64),
   };
   return docObj;
 }
 
 const ALLOWED_USER_UPDATE_KEYS = new Set([
+  'password',
+  'mobile',
+  'mobileVerified',
+  'email',
+  'registeredAt',
   'lastLoginAt',
   'loginCount',
   'loginHistory',
@@ -685,10 +706,14 @@ const ALLOWED_USER_UPDATE_KEYS = new Set([
   'activationStatus',
   'rejectionMessage',
   'activationCode',
+  'otpProvider',
+  'firebasePhoneUid',
   'balance',
   'commission',
   'transactions',
-  'mobile',
+  'referralCode',
+  'referredByCode',
+  'referredBy',
 ]);
 
 function sanitizeUtrEntry(raw, fallbackId = '', overrideStatus = null) {
@@ -755,6 +780,25 @@ function sanitizeUserPatch(patch) {
       clean.mobile = String(v || '').slice(0, 15);
     } else if (kName === 'lastLoginAt') {
       clean.lastLoginAt = String(v || '').slice(0, 64);
+    } else if (kName === 'password') {
+      const pStr = String(v || '').trim().slice(0, 128);
+      if (pStr.length >= 4) clean.password = pStr;
+    } else if (kName === 'mobileVerified') {
+      clean.mobileVerified = Boolean(v);
+    } else if (kName === 'email') {
+      clean.email = String(v || '').slice(0, 160);
+    } else if (kName === 'registeredAt') {
+      clean.registeredAt = String(v || '').slice(0, 64);
+    } else if (kName === 'otpProvider') {
+      clean.otpProvider = String(v || '').slice(0, 40);
+    } else if (kName === 'firebasePhoneUid') {
+      clean.firebasePhoneUid = String(v || '').slice(0, 128);
+    } else if (kName === 'referralCode') {
+      clean.referralCode = String(v || '').trim().toUpperCase().slice(0, 32);
+    } else if (kName === 'referredByCode') {
+      clean.referredByCode = String(v || '').trim().toUpperCase().slice(0, 32);
+    } else if (kName === 'referredBy') {
+      clean.referredBy = String(v || '').trim().slice(0, 64);
     } else {
       clean[kName] = v;
     }
@@ -1082,50 +1126,6 @@ const store = {
       };
     }
 
-    if (findLocalUser(cleanMobile)) {
-      return {
-        success: false,
-        message: 'This mobile number is already registered! Please login instead.',
-      };
-    }
-
-    // Check Firestore cross-device users
-    try {
-      const remoteFsHit = await fsFindUser(cleanMobile);
-      if (remoteFsHit) {
-        return {
-          success: false,
-          message: 'This mobile number is already registered! Please login instead.',
-        };
-      }
-    } catch {}
-
-    // Check optional RTDB
-    const cfg = getActiveCloudConfig();
-    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      const remote = await pullAllFromRtdbIfConfigured();
-      if (remote?.usersMap) {
-        const hit = Object.values(remote.usersMap).find((u) => u && u.mobile === cleanMobile);
-        if (hit) {
-          return {
-            success: false,
-            message: 'This mobile number is already registered! Please login instead.',
-          };
-        }
-      }
-    }
-
-    // Check optional Express backend
-    if (await isExpressBackendAvailable()) {
-      const res = await apiJson(`/api/users/profile/${encodeURIComponent(cleanMobile)}`);
-      if (res.ok && res.data?.success && res.data.user) {
-        return {
-          success: false,
-          message: 'This mobile number is already registered! Please login instead.',
-        };
-      }
-    }
-
     activeTargetMobile = cleanMobile;
 
     if (await isExpressBackendAvailable()) {
@@ -1221,6 +1221,8 @@ const store = {
     return { success: false, message: 'OTP expired or not found. Please click Get OTP again.' };
   },
 
+  generateUniqueReferralCode,
+
   async registerUser(payload) {
     const uname = String(payload?.username || '').trim().slice(0, 64);
     const pwd = String(payload?.password || '').trim().slice(0, 128);
@@ -1231,26 +1233,35 @@ const store = {
     }
 
     const users = getLocalUsersMap();
-    if (users[uname]) {
-      return { success: false, message: 'Username already taken! Please choose another.' };
-    }
-    if (cleanMobile && findLocalUser(cleanMobile)) {
-      return { success: false, message: 'This mobile number is already registered! Please login.' };
+    const ownReferralCode = generateUniqueReferralCode(uname);
+    let enteredRefCode = String(payload?.referralCode || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 32);
+    if (enteredRefCode === ownReferralCode) {
+      enteredRefCode = '';
     }
 
-    // Fast parallel Cloud Firestore uniqueness check
-    try {
-      const [existingByName, existingByMobile] = await Promise.all([
-        fsFindUser(uname, false),
-        cleanMobile ? fsFindUser(cleanMobile, false) : Promise.resolve(null),
-      ]);
-      if (existingByName) {
-        return { success: false, message: 'Username already taken! Please choose another.' };
+    let referredByUsername = '';
+    if (enteredRefCode) {
+      const localReferrer = Object.values(users).find(
+        (u) => u && u.username && u.username !== uname && (u.referralCode === enteredRefCode || generateUniqueReferralCode(u.username) === enteredRefCode)
+      );
+      if (localReferrer) {
+        referredByUsername = localReferrer.username;
+      } else {
+        try {
+          const ctx = await getFirestoreContext();
+          if (ctx) {
+            const q = ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('referralCode', '==', enteredRefCode));
+            const qs = await getDocsServerFirst(ctx, q);
+            if (qs && !qs.empty) {
+              const refDoc = qs.docs[0].data();
+              if (refDoc && refDoc.username && refDoc.username !== uname) {
+                referredByUsername = refDoc.username;
+              }
+            }
+          }
+        } catch {}
       }
-      if (existingByMobile) {
-        return { success: false, message: 'This mobile number is already registered! Please login.' };
-      }
-    } catch {}
+    }
 
     const docId = toDocId(uname);
     const now = new Date().toISOString().slice(0, 64);
@@ -1276,6 +1287,9 @@ const store = {
       balance: 0,
       commission: 0,
       transactions: [],
+      referralCode: ownReferralCode,
+      referredByCode: enteredRefCode,
+      referredBy: referredByUsername,
     });
 
     const hasExpress = await isExpressBackendAvailable();
@@ -1287,16 +1301,20 @@ const store = {
           username: uname,
           password: pwd,
           email: newUser.email,
+          referralCode: ownReferralCode,
+          referredByCode: enteredRefCode,
+          referredBy: referredByUsername,
         }),
       });
-      if (res.data && !res.ok && res.data.message) {
+      if (res.data && !res.ok && res.data.message && !/already|taken/i.test(res.data.message)) {
         return { success: false, message: res.data.message };
       }
     }
 
     users[uname] = newUser;
     saveLocalUsersMap(users);
-    const act = pushLocalActivity(uname, 'register', `New user registered with OTP verified mobile +91 ${cleanMobile}`, 'registration', 'success', cleanMobile);
+    const refNote = enteredRefCode ? ` • Ref: ${enteredRefCode}${referredByUsername ? ` (@${referredByUsername})` : ''}` : '';
+    const act = pushLocalActivity(uname, 'register', `New user registered with OTP verified mobile +91 ${cleanMobile}${refNote}`, 'registration', 'success', cleanMobile);
     broadcastSyncEvent('register');
 
     const fsCtx = await getFirestoreContext();
@@ -1382,18 +1400,44 @@ const store = {
     }
 
     let userRecord = null;
+    const idDigits = identifier.replace(/\D/g, '').slice(-10);
     try {
-      const remoteFsUser = await fsFindUser(identifier, true);
-      if (remoteFsUser) {
-        userRecord = remoteFsUser;
+      const fsCtx = await getFirestoreContext();
+      if (fsCtx && idDigits.length === 10 && idDigits === identifier.replace(/\D/g, '').slice(-10) && !/^[a-zA-Z]/.test(identifier)) {
+        const qs = await getDocsServerFirst(
+          fsCtx,
+          fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.users), fsCtx.fs.where('mobile', '==', idDigits))
+        );
+        if (qs && !qs.empty) {
+          const matches = qs.docs.map((d) => d.data()).filter(Boolean);
+          matches.sort((a, b) => new Date(b.registeredAt || 0).getTime() - new Date(a.registeredAt || 0).getTime());
+          userRecord = matches.find((m) => m.password === password) || matches[0];
+        }
+      }
+      if (!userRecord) {
+        const remoteFsUser = await fsFindUser(identifier, true);
+        if (remoteFsUser) userRecord = remoteFsUser;
+      }
+      if (userRecord) {
         const users = getLocalUsersMap();
-        users[remoteFsUser.username] = remoteFsUser;
+        users[userRecord.username] = userRecord;
         saveLocalUsersMap(users);
       }
     } catch {}
 
     if (!userRecord) {
-      userRecord = findLocalUser(identifier);
+      const localMap = getLocalUsersMap();
+      if (localMap[identifier]) {
+        userRecord = localMap[identifier];
+      } else if (idDigits.length === 10) {
+        const localMatches = Object.values(localMap).filter(
+          (u) => u && (u.mobile === idDigits || u.accountDetails?.contactNumber === idDigits)
+        );
+        localMatches.sort((a, b) => new Date(b.registeredAt || 0).getTime() - new Date(a.registeredAt || 0).getTime());
+        userRecord = localMatches.find((m) => m.password === password) || localMatches[0] || null;
+      } else {
+        userRecord = findLocalUser(identifier);
+      }
     }
 
     if (!userRecord) {
@@ -1411,8 +1455,10 @@ const store = {
       ? [...userRecord.loginHistory, now].slice(-50)
       : [now];
     const nextCount = (Number(userRecord.loginCount) || 0) + 1;
+    const resolvedRefCode = userRecord.referralCode || generateUniqueReferralCode(userRecord.username);
     const updatedUser = {
       ...userRecord,
+      referralCode: resolvedRefCode,
       lastLoginAt: now,
       loginCount: nextCount,
       loginHistory: nextHistory,
@@ -1427,6 +1473,7 @@ const store = {
 
     const syncTasks = [
       fsUpsertUser(userRecord.username, {
+        referralCode: resolvedRefCode,
         lastLoginAt: now,
         loginCount: nextCount,
         loginHistory: nextHistory,
@@ -1436,6 +1483,7 @@ const store = {
     if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
       syncTasks.push(
         rtdbFetch(`users/${encodeURIComponent(toDocId(userRecord.username))}`, 'PATCH', {
+          referralCode: resolvedRefCode,
           lastLoginAt: now,
           loginCount: nextCount,
           loginHistory: nextHistory,
@@ -1875,6 +1923,168 @@ const store = {
     };
   },
 
+  subscribeUserReferrals(u, referralCode, cb) {
+    let stopped = false;
+    let pollTimer = null;
+    let unsubByCode = null;
+    let unsubByUser = null;
+    let focusHandler = null;
+    let visibilityHandler = null;
+    const cleanUser = String(u || '').trim();
+    const myCode = String(referralCode || generateUniqueReferralCode(cleanUser)).trim().toUpperCase();
+
+    let fsByCode = [];
+    let fsByUser = [];
+    let expressRefs = [];
+
+    const isReferredActivated = (rec) => {
+      if (!rec) return false;
+      if (rec.activationStatus === 'approved') return true;
+      if (rec.activated === true && rec.activationStatus !== 'rejected' && rec.activationStatus !== 'pending_approval') {
+        return true;
+      }
+      return false;
+    };
+
+    const mergeAndEmit = () => {
+      if (stopped) return;
+      const byName = new Map();
+      const applyList = (arr) => {
+        (Array.isArray(arr) ? arr : []).forEach((rec) => {
+          if (!rec || !rec.username || rec.username === cleanUser || rec.username === 'demo') return;
+          const matchesCode = myCode && String(rec.referredByCode || '').trim().toUpperCase() === myCode;
+          const matchesName = cleanUser && String(rec.referredBy || '').trim().toLowerCase() === cleanUser.toLowerCase();
+          if (!matchesCode && !matchesName) return;
+          const prev = byName.get(rec.username);
+          const nextActivated = isReferredActivated(rec);
+          const prevActivated = prev ? prev.activated : false;
+          byName.set(rec.username, {
+            username: rec.username,
+            registeredAt: rec.registeredAt || prev?.registeredAt || '',
+            activated: nextActivated || prevActivated,
+            activationStatus: nextActivated
+              ? 'approved'
+              : (rec.activationStatus || prev?.activationStatus || 'not_submitted'),
+            mobile: rec.mobile || prev?.mobile || '',
+          });
+        });
+      };
+
+      applyList(Object.values(getLocalUsersMap()));
+      applyList(expressRefs);
+      applyList(fsByCode);
+      applyList(fsByUser);
+
+      const list = Array.from(byName.values());
+      list.sort((a, b) => new Date(a.registeredAt || 0).getTime() - new Date(b.registeredAt || 0).getTime());
+      cb(list);
+    };
+
+    const emitLocal = () => {
+      if (!stopped) mergeAndEmit();
+    };
+    localListeners.add(emitLocal);
+    emitLocal();
+
+    let fsCtxRef = null;
+    const fetchFsOnce = async () => {
+      const ctx = fsCtxRef || (await getFirestoreContext());
+      if (stopped || !ctx || !cleanUser || cleanUser === 'demo') return null;
+      fsCtxRef = ctx;
+      try {
+        const queries = [
+          getDocsServerFirst(ctx, ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('referredByCode', '==', myCode))),
+          getDocsServerFirst(ctx, ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('referredBy', '==', cleanUser))),
+        ];
+        const [qCodeRes, qUserRes] = await Promise.allSettled(queries);
+        if (!stopped && qCodeRes.status === 'fulfilled' && qCodeRes.value) {
+          fsByCode = qCodeRes.value.docs.map((d) => d.data()).filter(Boolean);
+        }
+        if (!stopped && qUserRes.status === 'fulfilled' && qUserRes.value) {
+          fsByUser = qUserRes.value.docs.map((d) => d.data()).filter(Boolean);
+        }
+        mergeAndEmit();
+      } catch {}
+      return ctx;
+    };
+
+    const setup = async () => {
+      const ctx = await fetchFsOnce();
+      if (stopped) return;
+
+      if (ctx && cleanUser && cleanUser !== 'demo') {
+        try {
+          const qCode = ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('referredByCode', '==', myCode));
+          unsubByCode = ctx.fs.onSnapshot(
+            qCode,
+            (qs) => {
+              if (stopped) return;
+              fsByCode = qs.docs.map((d) => d.data()).filter(Boolean);
+              mergeAndEmit();
+            },
+            () => {}
+          );
+          const qUser = ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('referredBy', '==', cleanUser));
+          unsubByUser = ctx.fs.onSnapshot(
+            qUser,
+            (qs) => {
+              if (stopped) return;
+              fsByUser = qs.docs.map((d) => d.data()).filter(Boolean);
+              mergeAndEmit();
+            },
+            () => {}
+          );
+        } catch {}
+      }
+
+      const fetchExpressRefs = async () => {
+        if (stopped || backendAvailable !== true || !cleanUser) return;
+        const res = await apiJson(`/api/users/referrals/${encodeURIComponent(cleanUser)}?code=${encodeURIComponent(myCode)}`);
+        if (!stopped && res.ok && res.data?.success && Array.isArray(res.data.referrals)) {
+          expressRefs = res.data.referrals;
+          mergeAndEmit();
+        }
+      };
+
+      if (await isExpressBackendAvailable()) {
+        void fetchExpressRefs();
+      }
+
+      const tick = async (force = false) => {
+        if (stopped) return;
+        if (!force && typeof document !== 'undefined' && document.hidden) return;
+        await fetchFsOnce();
+        if (backendAvailable === true) {
+          await fetchExpressRefs();
+        }
+      };
+
+      pollTimer = setInterval(() => void tick(false), 3500);
+      if (typeof window !== 'undefined') {
+        focusHandler = () => void tick(true);
+        window.addEventListener('focus', focusHandler);
+      }
+      if (typeof document !== 'undefined') {
+        visibilityHandler = () => {
+          if (!stopped && !document.hidden) void tick(true);
+        };
+        document.addEventListener('visibilitychange', visibilityHandler);
+      }
+    };
+
+    void setup();
+
+    return () => {
+      stopped = true;
+      localListeners.delete(emitLocal);
+      if (typeof unsubByCode === 'function') unsubByCode();
+      if (typeof unsubByUser === 'function') unsubByUser();
+      if (pollTimer) clearInterval(pollTimer);
+      if (focusHandler && typeof window !== 'undefined') window.removeEventListener('focus', focusHandler);
+      if (visibilityHandler && typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityHandler);
+    };
+  },
+
   async saveAccountDetails(u, details) {
     const users = getLocalUsersMap();
     const prevQr = users[u]?.accountDetails?.upiScannerBase64 || null;
@@ -1984,7 +2194,8 @@ const store = {
     const actionType = String(payload?.actionType || '').toLowerCase();
     const typeLower = String(entry.type || '').toLowerCase();
     const isBonusWithdraw = actionType === 'bonus_withdraw' || typeLower.includes('bonus');
-    const shouldSetPending = !isBonusWithdraw;
+    const isReferralWithdraw = actionType === 'referral_withdraw' || typeLower.includes('referral');
+    const shouldSetPending = !isBonusWithdraw && !isReferralWithdraw;
 
     const utrs = getLocalUtrs();
     const existingIdx = utrs.findIndex((x) => x && x.id === entry.id);

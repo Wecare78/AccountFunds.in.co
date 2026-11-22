@@ -62,6 +62,9 @@ interface UserRecord {
   balance: number;
   commission: number;
   transactions: TxnRecord[];
+  referralCode?: string;
+  referredByCode?: string;
+  referredBy?: string;
 }
 
 interface UtrRecord {
@@ -534,7 +537,7 @@ async function startServer() {
   // 3. REAL CROSS-DEVICE USER DATA ENDPOINTS
   // ----------------------------------------
   app.post('/api/users/register', (req: Request, res: Response) => {
-    const { mobile, username, password, email } = req.body || {};
+    const { mobile, username, password, email, referralCode, referredByCode, referredBy } = req.body || {};
     const uname = String(username || '').trim();
     const pwd = String(password || '').trim();
     const cleanMobile = String(mobile || '').replace(/\D/g, '').slice(-10);
@@ -543,13 +546,14 @@ async function startServer() {
       return res.status(400).json({ success: false, message: 'Valid username and password are required.' });
     }
 
-    if (db.users[uname]) {
-      return res.status(409).json({ success: false, message: 'Username already taken! Please choose another.' });
-    }
-
-    const existingWithMobile = Object.values(db.users).find((u) => u && cleanMobile && u.mobile === cleanMobile);
-    if (existingWithMobile) {
-      return res.status(409).json({ success: false, message: 'This mobile number is already registered! Please login.' });
+    const cleanOwnRef = String(referralCode || '').trim().toUpperCase().slice(0, 32);
+    const cleanRefByCode = String(referredByCode || '').trim().toUpperCase().slice(0, 32);
+    let resolvedRefBy = String(referredBy || '').trim().slice(0, 64);
+    if (cleanRefByCode && !resolvedRefBy) {
+      const refOwner = Object.values(db.users).find(
+        (u) => u && u.username !== uname && u.referralCode && u.referralCode.toUpperCase() === cleanRefByCode
+      );
+      if (refOwner) resolvedRefBy = refOwner.username;
     }
 
     const now = new Date().toISOString();
@@ -573,10 +577,13 @@ async function startServer() {
       balance: 0,
       commission: 0,
       transactions: [],
+      referralCode: cleanOwnRef,
+      referredByCode: cleanRefByCode,
+      referredBy: resolvedRefBy,
     };
 
     db.users[uname] = newUser;
-    pushActivityLog(uname, 'register', `New user registered with verified mobile +91 ${cleanMobile}`, 'registration', 'success');
+    pushActivityLog(uname, 'register', `New user registered with verified mobile +91 ${cleanMobile}${cleanRefByCode ? ` • Ref: ${cleanRefByCode}` : ''}`, 'registration', 'success');
     saveDatabase(db);
     broadcastServerEvent('register', { username: uname });
 
@@ -597,11 +604,14 @@ async function startServer() {
     if (db.users[cleanIdentifier]) {
       matchedUsername = cleanIdentifier;
     } else if (cleanDigits) {
-      for (const [uname, u] of Object.entries(db.users)) {
-        if (u && (u.mobile === cleanDigits || u.accountDetails?.contactNumber === cleanDigits)) {
-          matchedUsername = uname;
-          break;
-        }
+      const mobileMatches = Object.entries(db.users)
+        .filter(([, u]) => u && (u.mobile === cleanDigits || u.accountDetails?.contactNumber === cleanDigits))
+        .sort(([, a], [, b]) => new Date(b.registeredAt || 0).getTime() - new Date(a.registeredAt || 0).getTime());
+      const exactPwdMatch = mobileMatches.find(([, u]) => u.password === pwd);
+      if (exactPwdMatch) {
+        matchedUsername = exactPwdMatch[0];
+      } else if (mobileMatches.length > 0) {
+        matchedUsername = mobileMatches[0][0];
       }
     }
 
@@ -682,6 +692,29 @@ async function startServer() {
     return res.json({ success: true, user, utrs });
   });
 
+  app.get('/api/users/referrals/:username', (req: Request, res: Response) => {
+    const uname = String(req.params.username || '').trim();
+    const codeQuery = String(req.query.code || '').trim().toUpperCase();
+    const owner = db.users[uname];
+    const targetCode = codeQuery || String(owner?.referralCode || '').trim().toUpperCase();
+    const referrals = Object.values(db.users)
+      .filter((u) => {
+        if (!u || !u.username || u.username === uname || u.username === 'demo') return false;
+        const matchCode = targetCode && String(u.referredByCode || '').trim().toUpperCase() === targetCode;
+        const matchName = uname && String(u.referredBy || '').trim().toLowerCase() === uname.toLowerCase();
+        return Boolean(matchCode || matchName);
+      })
+      .map((u) => ({
+        username: u.username,
+        registeredAt: u.registeredAt,
+        activated: Boolean(u.activated && u.activationStatus !== 'rejected' && u.activationStatus !== 'pending_approval') || u.activationStatus === 'approved',
+        activationStatus: u.activationStatus || (u.activated ? 'approved' : 'not_submitted'),
+        mobile: u.mobile || '',
+      }))
+      .sort((a, b) => new Date(a.registeredAt || 0).getTime() - new Date(b.registeredAt || 0).getTime());
+    return res.json({ success: true, referrals });
+  });
+
   app.post('/api/users/sync-profile', (req: Request, res: Response) => {
     const { user } = req.body || {};
     if (!user || !user.username || user.username === 'demo' || user.email === 'demo@accountfunds.com') {
@@ -755,7 +788,8 @@ async function startServer() {
     const actionStr = String(actionType || '').toLowerCase();
     const typeStr = String(record?.type || '').toLowerCase();
     const isBonus = actionStr === 'bonus_withdraw' || typeStr.includes('bonus');
-    if (!isBonus) {
+    const isReferral = actionStr === 'referral_withdraw' || typeStr.includes('referral');
+    if (!isBonus && !isReferral) {
       user.activated = false;
       user.activationStatus = 'pending_approval';
       user.rejectionMessage = '';

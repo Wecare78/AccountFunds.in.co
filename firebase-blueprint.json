@@ -57,7 +57,10 @@
         "firebasePhoneUid": { "type": "string", "maxLength": 128 },
         "balance": { "type": "number" },
         "commission": { "type": "number" },
-        "transactions": { "type": "array" }
+        "transactions": { "type": "array" },
+        "referralCode": { "type": "string", "maxLength": 32 },
+        "referredByCode": { "type": "string", "maxLength": 32 },
+        "referredBy": { "type": "string", "maxLength": 64 }
       },
       "required": ["docId", "username", "password", "mobile", "mobileVerified", "registeredAt", "lastLoginAt", "loginCount", "activated", "balance", "commission"]
     },

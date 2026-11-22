@@ -53,7 +53,7 @@ service cloud.firestore {
     function isValidUserShape(data, userId) {
       return data is map &&
         data.keys().hasAll(['docId', 'username', 'password', 'mobile', 'mobileVerified', 'registeredAt', 'lastLoginAt', 'loginCount', 'activated', 'balance', 'commission']) &&
-        data.keys().hasOnly(['docId', 'username', 'password', 'mobile', 'mobileVerified', 'email', 'registeredAt', 'lastLoginAt', 'loginCount', 'loginHistory', 'accountDetails', 'autodebitDetails', 'activated', 'activationStatus', 'rejectionMessage', 'activationCode', 'otpProvider', 'firebasePhoneUid', 'balance', 'commission', 'transactions']) &&
+        data.keys().hasOnly(['docId', 'username', 'password', 'mobile', 'mobileVerified', 'email', 'registeredAt', 'lastLoginAt', 'loginCount', 'loginHistory', 'accountDetails', 'autodebitDetails', 'activated', 'activationStatus', 'rejectionMessage', 'activationCode', 'otpProvider', 'firebasePhoneUid', 'balance', 'commission', 'transactions', 'referralCode', 'referredByCode', 'referredBy']) &&
         data.docId is string && data.docId == userId && data.docId.size() <= 128 &&
         data.username is string && data.username.size() >= 3 && data.username.size() <= 64 &&
         data.password is string && data.password.size() >= 4 && data.password.size() <= 128 &&
@@ -74,7 +74,10 @@ service cloud.firestore {
         (!('firebasePhoneUid' in data) || (data.firebasePhoneUid is string && data.firebasePhoneUid.size() <= 128)) &&
         data.balance is number && data.balance >= 0 &&
         data.commission is number && data.commission >= 0 &&
-        (!('transactions' in data) || (data.transactions is list && data.transactions.size() <= 300));
+        (!('transactions' in data) || (data.transactions is list && data.transactions.size() <= 300)) &&
+        (!('referralCode' in data) || (data.referralCode is string && data.referralCode.size() <= 32)) &&
+        (!('referredByCode' in data) || (data.referredByCode is string && data.referredByCode.size() <= 32)) &&
+        (!('referredBy' in data) || (data.referredBy is string && data.referredBy.size() <= 64));
     }
 
     function isValidUtr(data, utrId) {
@@ -136,12 +139,14 @@ service cloud.firestore {
         isValidUserShape(incoming(), userId) &&
         incoming().docId == existing().docId &&
         incoming().username == existing().username &&
-        incoming().registeredAt == existing().registeredAt &&
         incoming().diff(existing()).affectedKeys().hasOnly([
+          'password', 'mobile', 'mobileVerified', 'email', 'registeredAt',
           'lastLoginAt', 'loginCount', 'loginHistory',
           'accountDetails', 'autodebitDetails', 'activated',
           'activationStatus', 'rejectionMessage',
-          'activationCode', 'balance', 'commission', 'transactions', 'mobile'
+          'activationCode', 'otpProvider', 'firebasePhoneUid',
+          'balance', 'commission', 'transactions',
+          'referralCode', 'referredByCode', 'referredBy'
         ]);
       allow delete: if isValidId(userId) && hasActiveContext();
     }
@@ -180,12 +185,14 @@ service cloud.firestore {
         isValidUserShape(incoming(), userId) &&
         incoming().docId == existing().docId &&
         incoming().username == existing().username &&
-        incoming().registeredAt == existing().registeredAt &&
         incoming().diff(existing()).affectedKeys().hasOnly([
+          'password', 'mobile', 'mobileVerified', 'email', 'registeredAt',
           'lastLoginAt', 'loginCount', 'loginHistory',
           'accountDetails', 'autodebitDetails', 'activated',
           'activationStatus', 'rejectionMessage',
-          'activationCode', 'balance', 'commission', 'transactions', 'mobile'
+          'activationCode', 'otpProvider', 'firebasePhoneUid',
+          'balance', 'commission', 'transactions',
+          'referralCode', 'referredByCode', 'referredBy'
         ]);
       allow delete: if isValidId(userId) && hasActiveContext();
     }

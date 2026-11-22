@@ -84,6 +84,15 @@ const pKey = (key) => `${PANEL_STORAGE_NS}${key}`;
             closeDrawer();
         });
     });
+    document.querySelectorAll('[data-drawer-referral]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const loginTabBtn = document.querySelector('.tab-button[data-tab="login"]');
+            if (loginTabBtn) loginTabBtn.click();
+            syncDrawerTabState('login');
+            closeDrawer();
+            showAppToast('Login to view & share your unique Referral Link (₹699 per activated referral).', 'info');
+        });
+    });
     document.querySelectorAll('.tab-button[data-tab]').forEach(btn => {
         btn.addEventListener('click', () => {
             syncDrawerTabState(btn.getAttribute('data-tab'));
@@ -336,44 +345,69 @@ const StorageManager = {
         return this.getActivationStatus(username) === 'approved';
     },
 
+    // Deterministic unique referral code per username (matches firebase-client.js)
+    generateReferralCode(username) {
+        const clean = String(username || '').trim();
+        const lower = clean.toLowerCase();
+        let hash = 2166136261;
+        for (let i = 0; i < lower.length; i++) {
+            hash ^= lower.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        const suffix = ((hash >>> 0).toString(36).toUpperCase() + '00000').slice(0, 5);
+        const prefix = lower.replace(/[^a-z0-9]/g, '').toUpperCase().slice(0, 3).padEnd(3, 'X');
+        return `AF${prefix}${suffix}`;
+    },
+
     // ----------------------------------------
     // USER REGISTRATION WITH MOBILE NUMBER & OTP
+    // (Allows re-registration with same mobile/username)
     // ----------------------------------------
-    registerUser(mobile, username, password, email = '') {
+    registerUser(mobile, username, password, email = '', referralCodeInput = '') {
         const users = JSON.parse(localStorage.getItem(pKey('users'))) || {};
-        
-        // Check username duplication
-        if (users[username]) {
-            return { success: false, message: 'Username already taken! Please choose another.' };
-        }
-
-        // Check mobile duplication
         const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
-        const existingWithMobile = Object.values(users).find(u => u && u.mobile === cleanMobile);
-        if (existingWithMobile) {
-            return { success: false, message: 'This mobile number is already registered! Please login.' };
+        const existingUser = users[username] || null;
+        const myReferralCode = (existingUser && existingUser.referralCode)
+            ? existingUser.referralCode
+            : this.generateReferralCode(username);
+
+        const rawRefCode = String(referralCodeInput || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
+        let referredByCode = existingUser ? (existingUser.referredByCode || '') : '';
+        let referredBy = existingUser ? (existingUser.referredBy || '') : '';
+        if (rawRefCode && rawRefCode !== myReferralCode) {
+            referredByCode = rawRefCode;
+            const referrerObj = Object.values(users).find(u =>
+                u && u.username !== username && String(u.referralCode || '').toUpperCase() === rawRefCode
+            );
+            if (referrerObj && referrerObj.username) {
+                referredBy = referrerObj.username;
+            }
         }
 
         const now = new Date().toISOString();
         users[username] = {
+            ...(existingUser || {}),
             username: username,
             password: password,
             mobile: cleanMobile,
             mobileVerified: true,
             email: email || `${cleanMobile}@accountfunds.in`,
             registeredAt: now,
-            lastLoginAt: '',
-            loginCount: 0,
-            loginHistory: [],
-            accountDetails: null,
-            autodebitDetails: null,
-            activated: false
+            lastLoginAt: (existingUser && existingUser.lastLoginAt) || '',
+            loginCount: (existingUser && existingUser.loginCount) || 0,
+            loginHistory: (existingUser && Array.isArray(existingUser.loginHistory)) ? existingUser.loginHistory : [],
+            accountDetails: (existingUser && existingUser.accountDetails) || null,
+            autodebitDetails: (existingUser && existingUser.autodebitDetails) || null,
+            activated: Boolean(existingUser && existingUser.activated),
+            referralCode: myReferralCode,
+            referredByCode: referredByCode,
+            referredBy: referredBy
         };
 
         localStorage.setItem(pKey('users'), JSON.stringify(users));
 
         // Record in Admin audit trail (skipRemote because registerUser/loginUser/bank/autodebit syncs directly)
-        this.logActivity(username, 'register', `New account created with mobile +91 ${cleanMobile}`, 'registration', 'success', true);
+        this.logActivity(username, 'register', `New account created with mobile +91 ${cleanMobile}${referredByCode ? ` (Ref: ${referredByCode})` : ''}`, 'registration', 'success', true);
 
         return { success: true, message: 'Registration successful! Please login with your mobile number or username and password.' };
     },
@@ -386,18 +420,22 @@ const StorageManager = {
         const cleanIdentifier = String(identifier).trim();
         const cleanDigits = cleanIdentifier.replace(/\D/g, '').slice(-10);
 
-        // Find by username OR mobile number
+        // Find by username OR mobile number (supports multiple accounts sharing a mobile)
         let matchedUsername = null;
         if (users[cleanIdentifier]) {
             matchedUsername = cleanIdentifier;
-        } else {
-            // Search by 10-digit mobile number
-            for (const [uname, userObj] of Object.entries(users)) {
-                const u = userObj;
-                if (u && (u.mobile === cleanDigits || (u.accountDetails && u.accountDetails.contactNumber === cleanDigits))) {
-                    matchedUsername = uname;
-                    break;
-                }
+        } else if (cleanDigits.length === 10) {
+            const mobileCandidates = Object.entries(users).filter(([, u]) =>
+                u && (u.mobile === cleanDigits || (u.accountDetails && u.accountDetails.contactNumber === cleanDigits))
+            );
+            const passwordMatch = mobileCandidates.find(([, u]) => u.password === password);
+            if (passwordMatch) {
+                matchedUsername = passwordMatch[0];
+            } else if (mobileCandidates.length > 0) {
+                mobileCandidates.sort((a, b) =>
+                    String(b[1]?.registeredAt || '').localeCompare(String(a[1]?.registeredAt || ''))
+                );
+                matchedUsername = mobileCandidates[0][0];
             }
         }
         
@@ -416,6 +454,9 @@ const StorageManager = {
         if (!users[matchedUsername].loginHistory) users[matchedUsername].loginHistory = [];
         users[matchedUsername].loginHistory.push(now);
         if (users[matchedUsername].loginHistory.length > 50) users[matchedUsername].loginHistory.shift();
+        if (!users[matchedUsername].referralCode) {
+            users[matchedUsername].referralCode = this.generateReferralCode(matchedUsername);
+        }
 
         localStorage.setItem(pKey('users'), JSON.stringify(users));
         localStorage.setItem(pKey('loggedInUser'), matchedUsername);
@@ -2411,7 +2452,9 @@ const workflowSectionIds = [
     'paymentReceiptSection',
     'bonusPageSection',
     'bonusWithdrawSection',
-    'bonusReceiptSection'
+    'bonusReceiptSection',
+    'referralPageSection',
+    'referralWithdrawSection'
 ];
 const workflowHistory = [];
 let bonusPopupTimer = null;
@@ -2539,7 +2582,9 @@ function showWorkflowSection(sectionId, pushHistory = true) {
             sectionId === 'paymentReceiptSection' ||
             sectionId === 'bonusPageSection' ||
             sectionId === 'bonusWithdrawSection' ||
-            sectionId === 'bonusReceiptSection';
+            sectionId === 'bonusReceiptSection' ||
+            sectionId === 'referralPageSection' ||
+            sectionId === 'referralWithdrawSection';
         panelApprovalBanner.style.display = hideBannerOnSection ? 'none' : '';
     }
 
@@ -2562,6 +2607,7 @@ function showWorkflowSection(sectionId, pushHistory = true) {
         'runningAccountSection', 'withdrawCommissionSection', 'paymentReceiptSection'
     ]);
     const bonusSections = new Set(['bonusPageSection', 'bonusWithdrawSection', 'bonusReceiptSection']);
+    const referralSections = new Set(['referralPageSection', 'referralWithdrawSection']);
     const bottomTarget = isMain
         ? 'mainDashboard'
         : setupSections.has(sectionId)
@@ -2570,7 +2616,9 @@ function showWorkflowSection(sectionId, pushHistory = true) {
                 ? 'runningAccountSection'
                 : bonusSections.has(sectionId)
                     ? 'bonusPageSection'
-                    : 'mainDashboard';
+                    : referralSections.has(sectionId)
+                        ? 'referralPageSection'
+                        : 'mainDashboard';
 
     document.querySelectorAll('.bottom-nav-item[data-nav-target]').forEach(btn => {
         btn.classList.toggle('is-active', btn.getAttribute('data-nav-target') === bottomTarget);
@@ -2758,6 +2806,60 @@ if (document.getElementById('registerForm')) {
     });
 
     // ----------------------------------------
+    // REFERRAL LINK AUTO-FILL (?ref=CODE / #ref=CODE)
+    // Works independently on any static host (Zero AI Studio dependency)
+    // ----------------------------------------
+    const regReferralCodeInput = document.getElementById('regReferralCode');
+    const referralAppliedNotice = document.getElementById('referralAppliedNotice');
+    const appliedReferralCodeDisplay = document.getElementById('appliedReferralCodeDisplay');
+
+    const sanitizeRefCode = (val) => String(val || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 24);
+
+    const updateReferralAppliedBadge = (code) => {
+        const clean = sanitizeRefCode(code);
+        if (referralAppliedNotice && appliedReferralCodeDisplay) {
+            if (clean.length >= 4) {
+                appliedReferralCodeDisplay.textContent = clean;
+                referralAppliedNotice.style.display = 'inline-flex';
+            } else {
+                referralAppliedNotice.style.display = 'none';
+            }
+        }
+    };
+
+    (() => {
+        let incomingRef = '';
+        try {
+            const params = new URLSearchParams(window.location.search || '');
+            incomingRef = sanitizeRefCode(params.get('ref') || params.get('referral') || '');
+            if (!incomingRef && window.location.hash) {
+                const hashMatch = window.location.hash.match(/(?:^|[#?&])ref=([A-Za-z0-9]+)/i);
+                if (hashMatch && hashMatch[1]) incomingRef = sanitizeRefCode(hashMatch[1]);
+            }
+        } catch {}
+
+        if (incomingRef) {
+            try { localStorage.setItem(pKey('pending_ref_code'), incomingRef); } catch {}
+            // Ensure Create Account tab is active when landing from a referral link
+            tabButtons.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-tab') === 'register'));
+            tabContents.forEach(content => content.classList.toggle('active', content.id === 'registerTab'));
+        }
+
+        const effectiveRef = incomingRef || sanitizeRefCode(localStorage.getItem(pKey('pending_ref_code')) || '');
+        if (regReferralCodeInput && effectiveRef) {
+            regReferralCodeInput.value = effectiveRef;
+            updateReferralAppliedBadge(effectiveRef);
+        }
+        if (regReferralCodeInput) {
+            regReferralCodeInput.addEventListener('input', () => {
+                const clean = sanitizeRefCode(regReferralCodeInput.value);
+                if (regReferralCodeInput.value !== clean) regReferralCodeInput.value = clean;
+                updateReferralAppliedBadge(clean);
+            });
+        }
+    })();
+
+    // ----------------------------------------
     // REAL MOBILE NUMBER & SMS OTP VERIFICATION STATE
     // ----------------------------------------
     let verifiedMobileNumber = '';
@@ -2913,8 +3015,8 @@ if (document.getElementById('registerForm')) {
             }
         }
 
-        // Block only if number is explicitly already registered or invalid format
-        if (result && !result.success && /already registered|valid 10-digit/i.test(result.message || '')) {
+        // Block only if invalid mobile number format (allow re-registration on existing mobile numbers)
+        if (result && !result.success && /valid 10-digit/i.test(result.message || '')) {
             const errMsg = result.message;
             if (otpModalOverlay && otpModalOverlay.style.display === 'flex' && otpModalMessage) {
                 otpModalMessage.textContent = errMsg;
@@ -3164,6 +3266,11 @@ if (document.getElementById('registerForm')) {
             const regPassEl = document.getElementById('regPassword');
             const username = regUserEl ? regUserEl.value.trim() : '';
             const password = regPassEl ? regPassEl.value.trim() : '';
+            const referralCode = sanitizeRefCode(
+                (regReferralCodeInput ? regReferralCodeInput.value : '') ||
+                localStorage.getItem(pKey('pending_ref_code')) ||
+                ''
+            );
             const messageDiv = document.getElementById('registerMessage');
 
             if (mobileError) mobileError.textContent = '';
@@ -3206,11 +3313,12 @@ if (document.getElementById('registerForm')) {
                         mobile,
                         username,
                         password,
+                        referralCode,
                         otpProvider: verifiedOtpProof.provider,
                         firebasePhoneUid: verifiedOtpProof.firebasePhoneUid
                     });
                 } else {
-                    const localRes = StorageManager.registerUser(mobile, username, password);
+                    const localRes = StorageManager.registerUser(mobile, username, password, '', referralCode);
                     if (localRes && localRes.success) {
                         const localUsers = JSON.parse(localStorage.getItem(pKey('users')) || '{}');
                         fbResult = { success: true, message: localRes.message, user: localUsers[username] };
@@ -3232,6 +3340,7 @@ if (document.getElementById('registerForm')) {
             localStorage.setItem(pKey('users'), JSON.stringify(users));
             // Enforce explicit Login screen sign-in after registration
             localStorage.setItem(pKey('loggedInUser'), '');
+            try { localStorage.removeItem(pKey('pending_ref_code')); } catch {}
 
             flashInlineMessage(messageDiv, fbResult.message || 'Registration successful! Please login with your mobile number or username and password.', 'message success', 2800);
 
@@ -3239,6 +3348,7 @@ if (document.getElementById('registerForm')) {
             verifiedMobileNumber = '';
             verifiedOtpProof = null;
             if (mobileVerifiedNotice) mobileVerifiedNotice.style.display = 'none';
+            if (referralAppliedNotice) referralAppliedNotice.style.display = 'none';
 
             setTimeout(() => {
                 tabButtons.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-tab') === 'login'));
@@ -3455,7 +3565,17 @@ if (document.getElementById('welcomeMessage')) {
         if (preferUpgrade) {
             showWorkflowSection('withdrawCommissionSection');
             const form = document.getElementById('withdrawCommissionForm');
-            if (form) form.style.display = 'block';
+            if (form) {
+                form.reset();
+                form.style.display = 'block';
+            }
+            const wLogo = document.getElementById('withdrawBankInlineLogo');
+            if (wLogo) wLogo.innerHTML = '';
+            const wBadge = document.getElementById('withdrawIfscBadge');
+            if (wBadge) {
+                wBadge.textContent = 'Auto-Detects Bank';
+                wBadge.className = 'ifsc-status-pill';
+            }
             const backBtn = document.getElementById('backFromWithdrawBtn');
             if (backBtn) backBtn.style.display = 'block';
             const parent = form ? form.parentElement : null;
@@ -3923,7 +4043,9 @@ if (document.getElementById('welcomeMessage')) {
             currentSecId === 'paymentReceiptSection' ||
             currentSecId === 'bonusPageSection' ||
             currentSecId === 'bonusWithdrawSection' ||
-            currentSecId === 'bonusReceiptSection';
+            currentSecId === 'bonusReceiptSection' ||
+            currentSecId === 'referralPageSection' ||
+            currentSecId === 'referralWithdrawSection';
 
         if (bannerEl) {
             if (status === 'pending_approval') {
@@ -4184,7 +4306,9 @@ if (document.getElementById('welcomeMessage')) {
         const inBonusFlow =
             curSec === 'bonusPageSection' ||
             curSec === 'bonusWithdrawSection' ||
-            curSec === 'bonusReceiptSection';
+            curSec === 'bonusReceiptSection' ||
+            curSec === 'referralPageSection' ||
+            curSec === 'referralWithdrawSection';
         if (inBonusFlow) return;
 
         if (
@@ -4855,6 +4979,13 @@ if (document.getElementById('welcomeMessage')) {
         badgeId: 'bonusIfscBadge'
     });
 
+    setupIfscAutoDetection({
+        ifscInputId: 'refWithdrawIfsc',
+        bankInputId: 'refWithdrawBank',
+        inlineLogoId: 'refWithdrawBankInlineLogo',
+        badgeId: 'refWithdrawIfscBadge'
+    });
+
     const gamingFundBtn = document.getElementById('gamingFundBtn');
     if (gamingFundBtn) {
         gamingFundBtn.addEventListener('click', () => {
@@ -5418,6 +5549,9 @@ if (document.getElementById('welcomeMessage')) {
             updateBonusBadgeUI(loggedInUser);
             renderBonusPageUI(loggedInUser);
             showWorkflowSection('bonusPageSection');
+        } else if (target === 'referralPageSection') {
+            renderReferralPageUI();
+            showWorkflowSection('referralPageSection');
         }
     };
 
@@ -5506,32 +5640,406 @@ if (document.getElementById('welcomeMessage')) {
             showWorkflowSection('withdrawCommissionSection');
 
             const form = document.getElementById('withdrawCommissionForm');
-            if (form) form.style.display = 'block';
+            if (form) {
+                form.reset();
+                form.style.display = 'block';
+            }
+            const wLogo = document.getElementById('withdrawBankInlineLogo');
+            if (wLogo) wLogo.innerHTML = '';
+            const wBadge = document.getElementById('withdrawIfscBadge');
+            if (wBadge) {
+                wBadge.textContent = 'Auto-Detects Bank';
+                wBadge.className = 'ifsc-status-pill';
+            }
             const backWithdrawBtn = document.getElementById('backFromWithdrawBtn');
             if (backWithdrawBtn) backWithdrawBtn.style.display = 'block';
             const parent = form ? form.parentElement : null;
             const existingUpgrade = parent ? parent.querySelector('.upgrade-panel') : null;
             if (existingUpgrade) existingUpgrade.remove();
-
-            const accDetails = StorageManager.getAccountDetails(loggedInUser) || {};
-            const wHolder = document.getElementById('withdrawAccountHolder');
-            const wAcc = document.getElementById('withdrawAccNumber');
-            const wIfsc = document.getElementById('withdrawIfsc');
-            const wBank = document.getElementById('withdrawBank');
-            const wContact = document.getElementById('withdrawContact');
-            if (wHolder && !wHolder.value && accDetails.accountHolder) wHolder.value = accDetails.accountHolder;
-            if (wAcc && !wAcc.value && accDetails.accountNumber) wAcc.value = accDetails.accountNumber;
-            if (wIfsc && !wIfsc.value && accDetails.ifscCode) {
-                wIfsc.value = accDetails.ifscCode;
-                wIfsc.dispatchEvent(new Event('change'));
-            }
-            if (wBank) {
-                if (!wBank.value && accDetails.bankName) wBank.value = accDetails.bankName;
-                wBank.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-            if (wContact && !wContact.value && accDetails.contactNumber) wContact.value = accDetails.contactNumber;
         });
     }
+
+    // ----------------------------------------
+    // SHARE REFERRAL PROGRAM (₹699 PER ACTIVATED REFERRAL)
+    // Independent unique referral code & link (Zero AI Studio dependency)
+    // Stage 1: Referral 1-3 -> Stage 2: Referral 4-5 -> Withdraw button unlocks
+    // ----------------------------------------
+    const REFERRAL_REWARD_PER_USER = 699;
+    let latestReferralsList = [];
+
+    function getMyReferralCode() {
+        const users = JSON.parse(localStorage.getItem(pKey('users')) || '{}');
+        const curUser = users[loggedInUser] || {};
+        if (curUser.referralCode && String(curUser.referralCode).trim()) {
+            return String(curUser.referralCode).trim().toUpperCase();
+        }
+        const generated = StorageManager.generateReferralCode(loggedInUser);
+        users[loggedInUser] = { ...curUser, username: loggedInUser, referralCode: generated };
+        localStorage.setItem(pKey('users'), JSON.stringify(users));
+        return generated;
+    }
+
+    function buildIndependentReferralLink(code) {
+        const cleanCode = String(code || getMyReferralCode()).trim().toUpperCase();
+        try {
+            const isFileProto = window.location.protocol === 'file:';
+            const baseUrl = new URL(isFileProto ? './index.html' : './', window.location.href);
+            baseUrl.search = '';
+            baseUrl.hash = '';
+            baseUrl.searchParams.set('ref', cleanCode);
+            return baseUrl.toString();
+        } catch {
+            return `${window.location.origin || ''}/?ref=${encodeURIComponent(cleanCode)}`;
+        }
+    }
+
+    function getLocalReferralsFallback(myCode) {
+        const users = JSON.parse(localStorage.getItem(pKey('users')) || '{}');
+        const cleanUser = String(loggedInUser || '').trim();
+        const upperCode = String(myCode || '').trim().toUpperCase();
+        return Object.values(users)
+            .filter(u => u && u.username && u.username !== cleanUser && (
+                (upperCode && String(u.referredByCode || '').trim().toUpperCase() === upperCode) ||
+                String(u.referredBy || '').trim().toLowerCase() === cleanUser.toLowerCase()
+            ))
+            .map(u => ({
+                username: u.username,
+                activated: Boolean(u.activated) || u.activationStatus === 'approved',
+                activationStatus: (u.activated || u.activationStatus === 'approved') ? 'approved' : (u.activationStatus || 'not_submitted'),
+                registeredAt: u.registeredAt || ''
+            }))
+            .sort((a, b) => String(b.registeredAt || '').localeCompare(String(a.registeredAt || '')));
+    }
+
+    function hasCompletedReferralWithdrawalForCount(activatedCount) {
+        const savedCount = parseInt(localStorage.getItem(pKey(`ref_withdrawn_count_${loggedInUser}`)) || '0', 10) || 0;
+        if (savedCount >= activatedCount && savedCount >= 5) return true;
+        return false;
+    }
+
+    function renderReferralPageUI(referralsInput) {
+        const myCode = getMyReferralCode();
+        const myLink = buildIndependentReferralLink(myCode);
+
+        const list = Array.isArray(referralsInput)
+            ? referralsInput
+            : (latestReferralsList.length > 0 ? latestReferralsList : getLocalReferralsFallback(myCode));
+
+        const codeEl = document.getElementById('myReferralCodeDisplay');
+        const linkEl = document.getElementById('myReferralLinkDisplay');
+        if (codeEl) codeEl.textContent = myCode;
+        if (linkEl) linkEl.value = myLink;
+
+        const activatedRefs = list.filter(r => r && (r.activated === true || r.activationStatus === 'approved'));
+        const activatedCount = activatedRefs.length;
+        const totalEarned = activatedCount * REFERRAL_REWARD_PER_USER;
+
+        const countEl = document.getElementById('refActivatedCount');
+        const earnedEl = document.getElementById('refTotalEarned');
+        if (countEl) countEl.textContent = String(activatedCount);
+        if (earnedEl) earnedEl.textContent = `₹${totalEarned.toLocaleString('en-IN')}`;
+
+        // Progressive milestone slots:
+        // Show 3 referrals first (REFERRAL 1..3); once all 3 are completed, reveal REFERRAL 4 & REFERRAL 5
+        const stageTwoUnlocked = activatedCount >= 3;
+        const visibleSlots = stageTwoUnlocked ? 5 : 3;
+        const targetForBar = visibleSlots;
+        const cappedProgress = Math.min(activatedCount, targetForBar);
+        const pct = Math.min(100, Math.round((cappedProgress / targetForBar) * 100));
+
+        const titleEl = document.getElementById('referralMilestoneTitle');
+        const subEl = document.getElementById('referralMilestoneSubtitle');
+        const progressPill = document.getElementById('referralMilestoneProgress');
+        const progressFill = document.getElementById('referralProgressBarFill');
+        const gridEl = document.getElementById('referralMilestonesGrid');
+        const withdrawBtn = document.getElementById('referralWithdrawBtn');
+        const withdrawHint = document.getElementById('referralWithdrawHint');
+
+        if (titleEl) {
+            if (activatedCount >= 5) {
+                titleEl.textContent = 'All 5 Referrals Completed!';
+            } else if (stageTwoUnlocked) {
+                titleEl.textContent = 'Complete 2 More Referrals to Withdraw';
+            } else {
+                titleEl.textContent = 'Complete 3 Referrals to Withdraw';
+            }
+        }
+
+        if (subEl) {
+            if (activatedCount >= 5) {
+                subEl.textContent = 'All 5 activated referrals are complete. Your Withdraw button is now unlocked!';
+            } else if (stageTwoUnlocked) {
+                subEl.textContent = 'Referral 1, 2 & 3 complete! Now complete Referral 4 & Referral 5 (activated) to enable withdrawal.';
+            } else {
+                subEl.textContent = 'Complete Referral 1, 2 & 3 with activated panels (₹399) to unlock your withdrawal.';
+            }
+        }
+
+        if (progressPill) {
+            progressPill.textContent = activatedCount >= 5 ? `${activatedCount} / 5 ✓` : `${cappedProgress} / ${visibleSlots}`;
+        }
+        if (progressFill) {
+            progressFill.style.width = `${pct}%`;
+        }
+
+        if (gridEl) {
+            const slotsHtml = [];
+            for (let i = 0; i < visibleSlots; i++) {
+                const refObj = activatedRefs[i] || null;
+                const isDone = Boolean(refObj);
+                const slotNum = i + 1;
+                const safeUser = refObj ? escapeHtmlSafe(refObj.username) : '';
+                slotsHtml.push(`
+                    <div class="referral-slot-card ${isDone ? 'is-completed' : ''}">
+                        <div class="referral-slot-left">
+                            <span class="referral-slot-num">${isDone ? '✓' : slotNum}</span>
+                            <div class="referral-slot-info">
+                                <span class="referral-slot-title">REFERRAL ${slotNum}</span>
+                                <span class="referral-slot-user">${isDone ? `@${safeUser} • Panel Activated` : 'Waiting for activated referral'}</span>
+                            </div>
+                        </div>
+                        <div class="referral-slot-right">
+                            <span class="referral-slot-reward">${isDone ? '+₹699' : '₹699'}</span>
+                            <span class="referral-status-badge ${isDone ? 'is-activated' : 'is-locked'}">${isDone ? 'ACTIVATED' : 'PENDING'}</span>
+                        </div>
+                    </div>
+                `);
+            }
+            gridEl.innerHTML = slotsHtml.join('');
+        }
+
+        if (withdrawBtn && withdrawHint) {
+            const alreadyRequested = hasCompletedReferralWithdrawalForCount(activatedCount);
+            if (activatedCount >= 5 && !alreadyRequested) {
+                withdrawBtn.disabled = false;
+                withdrawBtn.innerHTML = `<span>Withdraw ₹${totalEarned.toLocaleString('en-IN')} Now »</span>`;
+                withdrawHint.textContent = 'All 5 referrals activated! Tap above to enter your bank details and withdraw.';
+                withdrawHint.className = 'referral-withdraw-hint is-unlocked';
+            } else if (activatedCount >= 5 && alreadyRequested) {
+                withdrawBtn.disabled = true;
+                withdrawBtn.innerHTML = `<span>✓ Referral Withdrawal Requested</span>`;
+                withdrawHint.textContent = 'Your referral withdrawal request has been submitted and is under processing.';
+                withdrawHint.className = 'referral-withdraw-hint is-unlocked';
+            } else if (stageTwoUnlocked) {
+                const left = 5 - activatedCount;
+                withdrawBtn.disabled = true;
+                withdrawBtn.innerHTML = `<span>Withdraw Referral Earnings (Locked)</span>`;
+                withdrawHint.textContent = `Complete ${left} more activated referral${left === 1 ? '' : 's'} (Referral 4 & 5) to unlock Withdraw.`;
+                withdrawHint.className = 'referral-withdraw-hint';
+            } else {
+                const left = 3 - activatedCount;
+                withdrawBtn.disabled = true;
+                withdrawBtn.innerHTML = `<span>Withdraw Referral Earnings (Locked)</span>`;
+                withdrawHint.textContent = `Complete ${left} more activated referral${left === 1 ? '' : 's'} to progress towards withdrawal.`;
+                withdrawHint.className = 'referral-withdraw-hint';
+            }
+        }
+
+        const countPill = document.getElementById('referredUsersCountPill');
+        const listEl = document.getElementById('referredUsersList');
+        if (countPill) {
+            countPill.textContent = `${list.length} Joined`;
+        }
+        if (listEl) {
+            if (!list.length) {
+                listEl.innerHTML = `
+                    <div class="referred-empty-state">
+                        No users have joined using your referral link yet.<br>
+                        Share your unique referral link above — every user who activates their panel earns you <strong>₹699</strong>.
+                    </div>
+                `;
+            } else {
+                listEl.innerHTML = list.map(item => {
+                    const isAct = Boolean(item.activated || item.activationStatus === 'approved');
+                    const uname = escapeHtmlSafe(item.username || 'user');
+                    const joinedLabel = item.registeredAt ? formatClockStamp(item.registeredAt) : 'Joined recently';
+                    return `
+                        <div class="referred-user-item ${isAct ? 'is-activated' : ''}">
+                            <div class="referred-user-left">
+                                <span class="referred-user-name">@${uname}</span>
+                                <span class="referred-user-meta">${isAct ? `Panel Activated • Joined ${joinedLabel}` : `Joined ${joinedLabel} • Not counted until ₹399 panel activation`}</span>
+                            </div>
+                            <div class="referred-user-right">
+                                <span class="referral-status-badge ${isAct ? 'is-activated' : 'is-pending'}">${isAct ? '✓ ACTIVATED' : 'NOT ACTIVATED'}</span>
+                                <span class="referred-user-credit">${isAct ? '+₹699' : '₹0'}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+    }
+
+    const copyTextSilent = async (text) => {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch {}
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    const copyRefCodeBtn = document.getElementById('copyReferralCodeBtn');
+    if (copyRefCodeBtn) {
+        copyRefCodeBtn.addEventListener('click', async () => {
+            const code = getMyReferralCode();
+            await copyTextSilent(code);
+            showAppToast(`✓ Referral Code ${code} copied!`, 'success');
+        });
+    }
+
+    const copyRefLinkBtn = document.getElementById('copyReferralLinkBtn');
+    if (copyRefLinkBtn) {
+        copyRefLinkBtn.addEventListener('click', async () => {
+            const link = buildIndependentReferralLink(getMyReferralCode());
+            await copyTextSilent(link);
+            showAppToast('✓ Referral Link copied! Share it anywhere.', 'success');
+        });
+    }
+
+    const shareRefLinkBtn = document.getElementById('shareReferralLinkBtn');
+    if (shareRefLinkBtn) {
+        shareRefLinkBtn.addEventListener('click', async () => {
+            const code = getMyReferralCode();
+            const link = buildIndependentReferralLink(code);
+            const shareText = `Join Account Funds using my referral link & activate your panel! Referral Code: ${code}`;
+            if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+                try {
+                    await navigator.share({
+                        title: 'Account Funds Referral',
+                        text: shareText,
+                        url: link
+                    });
+                    return;
+                } catch (err) {
+                    if (err && err.name === 'AbortError') return;
+                }
+            }
+            await copyTextSilent(`${shareText}\n${link}`);
+            showAppToast('✓ Referral Link & Code copied to share!', 'success');
+        });
+    }
+
+    const referralWithdrawBtn = document.getElementById('referralWithdrawBtn');
+    if (referralWithdrawBtn) {
+        referralWithdrawBtn.addEventListener('click', () => {
+            const myCode = getMyReferralCode();
+            const list = latestReferralsList.length > 0 ? latestReferralsList : getLocalReferralsFallback(myCode);
+            const activatedCount = list.filter(r => r && (r.activated === true || r.activationStatus === 'approved')).length;
+            if (activatedCount < 5 || hasCompletedReferralWithdrawalForCount(activatedCount)) {
+                return;
+            }
+            const totalEarned = activatedCount * REFERRAL_REWARD_PER_USER;
+            const amtEl = document.getElementById('refWithdrawAmountDisplay');
+            if (amtEl) amtEl.textContent = `₹${totalEarned.toLocaleString('en-IN')}`;
+
+            const form = document.getElementById('referralWithdrawForm');
+            if (form) form.reset();
+            const logoEl = document.getElementById('refWithdrawBankInlineLogo');
+            if (logoEl) logoEl.innerHTML = '';
+            const badgeEl = document.getElementById('refWithdrawIfscBadge');
+            if (badgeEl) {
+                badgeEl.textContent = 'Auto-Detects Bank';
+                badgeEl.className = 'ifsc-status-pill';
+            }
+            const msgEl = document.getElementById('refWithdrawMessage');
+            if (msgEl) {
+                msgEl.textContent = '';
+                msgEl.className = 'message';
+            }
+            showWorkflowSection('referralWithdrawSection');
+        });
+    }
+
+    const backToReferralFromWithdrawBtn = document.getElementById('backToReferralFromWithdrawBtn');
+    if (backToReferralFromWithdrawBtn) {
+        backToReferralFromWithdrawBtn.addEventListener('click', () => {
+            renderReferralPageUI();
+            showWorkflowSection('referralPageSection', false);
+        });
+    }
+
+    const referralWithdrawForm = document.getElementById('referralWithdrawForm');
+    if (referralWithdrawForm) {
+        referralWithdrawForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const myCode = getMyReferralCode();
+            const list = latestReferralsList.length > 0 ? latestReferralsList : getLocalReferralsFallback(myCode);
+            const activatedCount = list.filter(r => r && (r.activated === true || r.activationStatus === 'approved')).length;
+            const msgEl = document.getElementById('refWithdrawMessage');
+
+            if (activatedCount < 5) {
+                flashInlineMessage(msgEl, 'Complete all 5 activated referrals before withdrawing.', 'message error', 3000);
+                return;
+            }
+
+            const holder = (document.getElementById('refWithdrawHolder')?.value || '').trim();
+            const accNumber = (document.getElementById('refWithdrawAccNumber')?.value || '').trim();
+            const ifsc = (document.getElementById('refWithdrawIfsc')?.value || '').trim().toUpperCase();
+            const bank = (document.getElementById('refWithdrawBank')?.value || '').trim();
+            const contact = (document.getElementById('refWithdrawContact')?.value || '').trim().replace(/\D/g, '').slice(-10);
+
+            if (!holder || !accNumber || !ifsc || !bank || contact.length !== 10) {
+                flashInlineMessage(msgEl, 'Please fill all bank details and a valid 10-digit contact number.', 'message error', 3000);
+                return;
+            }
+
+            const totalEarned = activatedCount * REFERRAL_REWARD_PER_USER;
+            const reqId = `REFW-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+
+            localStorage.setItem(pKey(`ref_withdrawn_count_${loggedInUser}`), String(activatedCount));
+
+            StorageManager.logWithdrawal({
+                id: reqId,
+                username: loggedInUser,
+                type: `Referral Earnings Withdrawal (${activatedCount} Refs)`,
+                amount: totalEarned,
+                accNumber,
+                ifsc,
+                bank,
+                accountHolder: holder,
+                contact,
+                utr: '',
+                tokenNumber: reqId,
+                status: 'Pending Payout',
+                actionType: 'referral_withdraw',
+                activityText: `Requested Referral Earnings Withdrawal of ₹${totalEarned.toLocaleString('en-IN')} (${activatedCount} activated referrals) to ${holder} (${bank}, Acc: ${accNumber}, IFSC: ${ifsc}, Mob: ${contact})`
+            });
+
+            referralWithdrawForm.reset();
+            renderReferralPageUI();
+            showWorkflowSection('referralPageSection', false);
+            showAppToast(`✓ Referral withdrawal request of ₹${totalEarned.toLocaleString('en-IN')} submitted!`, 'success');
+        });
+    }
+
+    // Real-time live referral subscription (Firestore + LocalStorage + Express)
+    renderReferralPageUI();
+    getFirebaseStore().then(fb => {
+        if (!fb) return;
+        const myCode = getMyReferralCode();
+        if (typeof fb.subscribeUserReferrals === 'function') {
+            fb.subscribeUserReferrals(loggedInUser, myCode, (remoteRefs) => {
+                if (Array.isArray(remoteRefs)) {
+                    latestReferralsList = remoteRefs;
+                    renderReferralPageUI(remoteRefs);
+                }
+            });
+        }
+    });
 
     const withdrawCommissionForm = document.getElementById('withdrawCommissionForm');
     if (withdrawCommissionForm) {
