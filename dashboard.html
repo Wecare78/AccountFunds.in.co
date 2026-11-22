@@ -79,7 +79,7 @@
                 <span class="drawer-link-ico drawer-ico-gold" aria-hidden="true">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/></svg>
                 </span>
-                <span>Special Bonus (₹799)</span>
+                <span>Welcome Bonus (₹1,599)</span>
             </button>
 
             <div class="app-drawer-divider"></div>
@@ -109,7 +109,7 @@
     </aside>
 
     <!-- NATIVE MOBILE APP TOP HEADER BAR -->
-    <header class="app-topbar">
+    <header class="app-topbar" id="appTopHeader">
         <div class="app-topbar-inner">
             <div class="app-topbar-left">
                 <button type="button" class="app-hamburger-btn" id="appDrawerToggleBtn" aria-label="Open menu">
@@ -141,6 +141,7 @@
             </div>
 
             <div class="app-topbar-right">
+                <span id="headerBonusMount" class="header-bonus-mount"></span>
                 <div class="support-menu-wrap" id="supportMenuWrap">
                     <button type="button" class="support-pill-btn support-menu-btn" id="supportMenuBtn" aria-expanded="false" aria-haspopup="true" title="Official Telegram & Helpline">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -716,16 +717,18 @@
             </div>
         </div>
 
-        <!-- STEP 4: RUNNING ACCOUNT -->
+        <!-- STEP 4: RUNNING ACCOUNT (TRANSACTION WORKSPACE) -->
         <div class="dashboard-section hidden" id="runningAccountSection">
             <div class="card running-card fintech-glow-card">
-                <div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.45);padding:11px 14px;border-radius:12px;margin-bottom:15px;">
-                    <p style="color:#fca5a5;font-weight:700;margin:0;font-size:0.86rem;">⚠️ Do not refresh or close the app while transactions are running</p>
-                </div>
-
-                <div class="status-indicator" style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-                    <span id="accountStatusDot" class="status-dot stopped" aria-hidden="true"></span>
-                    <span id="accountStatusText" style="font-weight:700;color:var(--text-secondary);font-size:0.85rem;">ACCOUNT STOPPED – NOT RUNNING</span>
+                <div class="running-workspace-head">
+                    <div class="status-indicator running-status-row">
+                        <span id="accountStatusDot" class="status-dot stopped" aria-hidden="true"></span>
+                        <span id="accountStatusText" class="running-status-text">ACCOUNT STOPPED – NOT RUNNING</span>
+                    </div>
+                    <div class="running-notice-strip" role="note">
+                        <span class="running-notice-ico" aria-hidden="true">⚠️</span>
+                        <span>Do not refresh or close the app while transactions are running</span>
+                    </div>
                 </div>
 
                 <div id="panelGateAlertBox" class="panel-gate-alert hidden"></div>
@@ -733,38 +736,71 @@
                 <div class="running-main" id="runningMainContent">
                     <div class="running-left">
                         <div class="running-account-bar">
-                            <div class="running-bank-logo-mini" id="runningBankLogoMini" aria-hidden="true"></div>
-                            <p id="accountLinked" style="color:var(--text-primary);font-weight:700;margin:0;">Account Linked: XXXX 0000</p>
+                            <div class="running-account-bar-top">
+                                <div class="running-bank-logo-mini" id="runningBankLogoMini" aria-hidden="true"></div>
+                                <div class="running-account-meta">
+                                    <span class="running-account-eyebrow">Active Settlement Account</span>
+                                    <p id="accountLinked" class="running-account-linked-text">Account Linked: XXXX 0000</p>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="running-kpi-grid">
                             <div class="balance-display running-kpi-box running-kpi-balance">
-                                <p class="running-kpi-label">Live Balance</p>
+                                <span class="running-kpi-label">Live Balance</span>
                                 <div id="liveBalance" class="running-kpi-value running-val-balance">₹0</div>
                             </div>
                             <div class="balance-display running-kpi-box running-kpi-credit">
-                                <p class="running-kpi-label">Total Credits</p>
+                                <span class="running-kpi-label">Total Credits</span>
                                 <div id="runningTotalCredits" class="running-kpi-value running-val-credit">₹0</div>
                             </div>
                             <div class="balance-display running-kpi-box running-kpi-debit">
-                                <p class="running-kpi-label">Total Debits</p>
+                                <span class="running-kpi-label">Settled Payment</span>
                                 <div id="runningTotalDebits" class="running-kpi-value running-val-debit">₹0</div>
+                                <div id="settledTransferVisual" class="settled-transfer-flow" aria-label="Settled payment transfer from Account Funds to your linked bank">
+                                    <span class="settled-logo-node settled-logo-panel" title="Account Funds">
+                                        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                            <defs>
+                                                <linearGradient id="afSettledPanelHex" x1="4" y1="2" x2="36" y2="38" gradientUnits="userSpaceOnUse">
+                                                    <stop stop-color="#22D3EE"/>
+                                                    <stop offset="1" stop-color="#2563EB"/>
+                                                </linearGradient>
+                                            </defs>
+                                            <path d="M20 2L35.5 11V29L20 38L4.5 29V11L20 2Z" fill="url(#afSettledPanelHex)"/>
+                                            <path d="M26 13H15.5V20H24M15.5 20V27H26" stroke="#041024" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </span>
+                                    <span class="settled-flow-track" aria-hidden="true">
+                                        <span class="settled-flow-beam"></span>
+                                        <svg class="settled-flow-arrow" viewBox="0 0 28 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M2 6H24M24 6L19.5 1.8M24 6L19.5 10.2" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </span>
+                                    <span class="settled-logo-node settled-logo-bank" id="settledBankLogoSlot" title="Linked Bank"></span>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="transactions">
-                            <h4>Recent Ledger</h4>
+                        <div class="transactions running-ledger-panel">
+                            <div class="running-ledger-head">
+                                <div>
+                                    <h4>Live Account Ledger</h4>
+                                    <span class="running-ledger-sub">Real-time bank credits &amp; settlement debits</span>
+                                </div>
+                                <span class="running-ledger-count mono-font" id="runningFeedCount">0 txns</span>
+                            </div>
                             <div id="transactionFeed" class="transaction-feed"></div>
                         </div>
 
-                        <div id="limitMessage" class="message" style="margin-top:15px;"></div>
+                        <div id="limitMessage" class="message" style="margin-top:12px;"></div>
                     </div>
 
                     <div class="running-right">
-                        <div class="side-panel">
-                            <h4>Commission (3.5%)</h4>
-                            <div id="commissionAmount" style="font-size:1.6rem;font-weight:800;color:var(--secondary-color);margin:12px 0;">₹0</div>
-                            <p style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:14px;">Calculated automatically on Total Credit volume.</p>
+                        <div class="side-panel running-commission-card">
+                            <div class="running-comm-eyebrow">Payout Summary</div>
+                            <h4>Commission Earned (3.5%)</h4>
+                            <div id="commissionAmount" class="running-commission-amount">₹0</div>
+                            <p class="running-comm-note">Calculated automatically on Total Credit volume.</p>
                             <button type="button" class="btn btn-primary app-gradient-cta" id="withdrawCommissionBtn" style="width:100%;">Step 5: Withdraw »</button>
                         </div>
                     </div>
@@ -772,32 +808,21 @@
             </div>
         </div>
 
-        <!-- BONUS PAGE -->
+        <!-- WELCOME SPECIAL BONUS PAGE (₹1,599) -->
         <div class="dashboard-section hidden" id="bonusPageSection">
             <div class="card bonus-page-card fintech-glow-card">
-                <div class="bonus-page-title">🎁 SPECIAL BONUS</div>
+                <div class="bonus-gift-emblem" aria-hidden="true">🎁</div>
+                <div class="bonus-page-title">WELCOME SPECIAL BONUS</div>
                 <h3>CONGRATULATIONS</h3>
-                <p class="bonus-page-subtitle">SPECIAL BONUS CREDITED</p>
-                <div class="bonus-amount">₹799</div>
-                <button type="button" class="btn btn-primary btn-large app-gradient-cta" id="claimBonusBtn">CLAIM / WITHDRAW ₹799 »</button>
-
-                <div class="bonus-demo-countdown" aria-live="polite">
-                    <div class="bonus-countdown-expiry" id="bonusCountdownExpiry">Bonus will expire on: --</div>
-                    <div class="bonus-countdown-timer" aria-label="Bonus countdown">
-                        <span class="bonus-time-box"><strong id="bonusHours">00</strong><small>HOURS</small></span>
-                        <span class="bonus-time-separator">:</span>
-                        <span class="bonus-time-box"><strong id="bonusMinutes">00</strong><small>MINUTES</small></span>
-                        <span class="bonus-time-separator">:</span>
-                        <span class="bonus-time-box"><strong id="bonusSeconds">00</strong><small>SECONDS</small></span>
-                    </div>
-                    <div class="bonus-countdown-note">LEFT</div>
-                </div>
+                <p class="bonus-page-subtitle">WELCOME SPECIAL BONUS CREDITED</p>
+                <div class="bonus-amount">₹1,599</div>
+                <button type="button" class="btn btn-primary btn-large app-gradient-cta bonus-claim-cta" id="claimBonusBtn">🎁 CLAIM ₹1,599 »</button>
 
                 <div id="bonusMessageContainer" class="bonus-inline-message" style="display:none;"></div>
             </div>
         </div>
 
-        <!-- BONUS WITHDRAW PAGE -->
+        <!-- BONUS WITHDRAW PAYOUT FORM PAGE -->
         <div class="dashboard-section hidden" id="bonusWithdrawSection">
             <div class="card fintech-glow-card">
                 <div class="fintech-card-hero">
@@ -805,8 +830,8 @@
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/></svg>
                     </div>
                     <div class="fintech-hero-text">
-                        <h3>Bonus Withdraw <span class="accent-cyan">Details</span></h3>
-                        <p>Enter payout bank account details to claim your ₹799 bonus.</p>
+                        <h3>Welcome Special Bonus <span class="accent-cyan">Withdrawal</span></h3>
+                        <p>Enter your bank payout details below to withdraw your ₹1,599 bonus onspot.</p>
                     </div>
                 </div>
                 <form id="bonusWithdrawForm">
@@ -831,14 +856,14 @@
                         </div>
                         <div class="input-icon-wrap">
                             <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 21h18"/><path d="M5 6l7-3 7 3"/><path d="M4 10v11"/><path d="M20 10v11"/></svg></span>
-                            <input type="text" id="bonusWithdrawIfsc" placeholder="Enter IFSC code" maxlength="11" style="text-transform:uppercase;font-family:var(--font-mono);letter-spacing:1px;" required>
+                            <input type="text" id="bonusWithdrawIfsc" placeholder="e.g. SBIN0001234" maxlength="11" style="text-transform:uppercase;font-family:var(--font-mono);letter-spacing:1px;" required>
                         </div>
                     </div>
 
                     <div class="form-group">
                         <label for="bonusWithdrawHolder" class="field-label-with-icon">
                             <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-                            <span>Account Holder Name</span>
+                            <span>Bank Account Holder Name</span>
                         </label>
                         <div class="input-icon-wrap">
                             <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
@@ -857,7 +882,18 @@
                         </div>
                     </div>
 
-                    <button type="submit" class="btn btn-primary app-gradient-cta">WITHDRAW BONUS ₹799 »</button>
+                    <div class="form-group">
+                        <label for="bonusWithdrawContact" class="field-label-with-icon">
+                            <span class="lbl-icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>
+                            <span>Contact Number</span>
+                        </label>
+                        <div class="input-icon-wrap">
+                            <span class="input-left-ico" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>
+                            <input type="tel" id="bonusWithdrawContact" placeholder="Enter 10-digit contact number" maxlength="10" inputmode="numeric" required>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary app-gradient-cta">₹1,599 WITHDRAW »</button>
                 </form>
                 <div id="bonusWithdrawMessage" class="message"></div>
             </div>
@@ -866,6 +902,11 @@
         <!-- VERIFIED PAYMENT RECEIPT SECTION (AUTO-GENERATED AFTER ADMIN VERIFIES ₹199 UTR) -->
         <div class="dashboard-section hidden" id="paymentReceiptSection">
             <div class="card verified-receipt-card fintech-glow-card" id="verifiedReceiptCard"></div>
+        </div>
+
+        <!-- WELCOME SPECIAL BONUS RECEIPT SECTION (₹1,599) -->
+        <div class="dashboard-section hidden" id="bonusReceiptSection">
+            <div class="card verified-receipt-card fintech-glow-card" id="bonusReceiptCard"></div>
         </div>
 
         <!-- TRANSACTION HISTORY -->
@@ -1007,6 +1048,23 @@
             <div class="otp-modal-actions">
                 <button type="button" class="btn btn-secondary" id="appConfirmCancelBtn">Cancel</button>
                 <button type="button" class="btn btn-danger" id="appConfirmOkBtn">Proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- WELCOME BONUS STATUS POPUP MODAL (4-7s AUTO-DISMISS) -->
+    <div id="bonusStatusPopupModal" class="otp-modal-overlay bonus-status-overlay" style="display:none;" role="alertdialog" aria-modal="true" aria-labelledby="bonusPopupTitle" aria-describedby="bonusPopupMessage">
+        <div class="otp-modal-card fintech-glow-card bonus-status-popup-card">
+            <div class="bonus-status-progress-track" aria-hidden="true">
+                <div class="bonus-status-progress-fill" id="bonusPopupProgressFill"></div>
+            </div>
+            <div class="otp-modal-header">
+                <div class="otp-shield-icon bonus-popup-icon" id="bonusPopupIcon" aria-hidden="true">⚠️</div>
+                <h3 id="bonusPopupTitle">Notice</h3>
+                <p class="otp-modal-subtitle bonus-popup-message" id="bonusPopupMessage"></p>
+            </div>
+            <div class="otp-modal-actions">
+                <button type="button" class="btn btn-primary app-gradient-cta" id="bonusPopupActionBtn">OK</button>
             </div>
         </div>
     </div>

@@ -762,6 +762,26 @@ function sanitizeUserPatch(patch) {
   return clean;
 }
 
+async function getDocServerFirst(fsCtx, ref) {
+  if (!fsCtx || !ref) return null;
+  if (typeof fsCtx.fs.getDocFromServer === 'function') {
+    try {
+      return await fsCtx.fs.getDocFromServer(ref);
+    } catch {}
+  }
+  return await fsCtx.fs.getDoc(ref);
+}
+
+async function getDocsServerFirst(fsCtx, q) {
+  if (!fsCtx || !q) return null;
+  if (typeof fsCtx.fs.getDocsFromServer === 'function') {
+    try {
+      return await fsCtx.fs.getDocsFromServer(q);
+    } catch {}
+  }
+  return await fsCtx.fs.getDocs(q);
+}
+
 async function fsFindUser(identifier, allowFullScan = true) {
   const ctx = await getFirestoreContext();
   if (!ctx) return null;
@@ -772,8 +792,8 @@ async function fsFindUser(identifier, allowFullScan = true) {
   const candidateDocId = toDocId(cleanId);
   const directPath = `${COLLECTIONS.users}/${candidateDocId}`;
   try {
-    const snap = await fs.getDoc(fs.doc(db, COLLECTIONS.users, candidateDocId));
-    if (snap.exists()) {
+    const snap = await getDocServerFirst(ctx, fs.doc(db, COLLECTIONS.users, candidateDocId));
+    if (snap && snap.exists()) {
       return snap.data();
     }
   } catch (err) {
@@ -824,7 +844,7 @@ async function fsUpsertUser(uname, patch) {
 
   let existsSnap = null;
   try {
-    existsSnap = await fs.getDoc(targetRef);
+    existsSnap = await getDocServerFirst(ctx, targetRef);
   } catch (err) {
     handleFirestoreError(err, OperationType.GET, path);
   }
@@ -832,8 +852,8 @@ async function fsUpsertUser(uname, patch) {
   if (!existsSnap || !existsSnap.exists()) {
     try {
       const q = fs.query(fs.collection(db, COLLECTIONS.users), fs.where('username', '==', cleanUname));
-      const qs = await fs.getDocs(q);
-      if (!qs.empty) {
+      const qs = await getDocsServerFirst(ctx, q);
+      if (qs && !qs.empty) {
         existsSnap = qs.docs[0];
         targetRef = existsSnap.ref;
         path = `${COLLECTIONS.users}/${existsSnap.id}`;
@@ -1471,6 +1491,9 @@ const store = {
     let pollTimer = null;
     let unsubFirestore = null;
     let sseHandler = null;
+    let focusHandler = null;
+    let onlineHandler = null;
+    let visibilityHandler = null;
     let fsUserState = null;
     let expressUserState = null;
 
@@ -1503,29 +1526,29 @@ const store = {
         };
       }
 
-      // If Firestore & Express disagree only due to transport lag, pick highest priority state cleanly:
-      // latest remote (fsUserState or expressUserState) wins when both exist
+      // Latest remote (fsUserState or expressUserState) wins cleanly
       const primaryRemote = fsUserState || expressUserState;
       if (fsUserState && expressUserState) {
-        // If either just approved while the other is still pending_approval, reflect approved immediately
         if (
           (fsUserState.activationStatus === 'approved' && expressUserState.activationStatus === 'pending_approval') ||
           (expressUserState.activationStatus === 'approved' && fsUserState.activationStatus === 'pending_approval')
         ) {
+          const winner = fsUserState.activationStatus === 'approved' ? fsUserState : expressUserState;
           merged.activated = true;
           merged.activationStatus = 'approved';
-          merged.rejectionMessage = '';
+          merged.rejectionMessage = winner.rejectionMessage || fsUserState.rejectionMessage || expressUserState.rejectionMessage || '';
         } else if (
           (fsUserState.activationStatus === 'rejected' && expressUserState.activationStatus === 'pending_approval') ||
           (expressUserState.activationStatus === 'rejected' && fsUserState.activationStatus === 'pending_approval')
         ) {
+          const winner = fsUserState.activationStatus === 'rejected' ? fsUserState : expressUserState;
           merged.activated = false;
           merged.activationStatus = 'rejected';
-          merged.rejectionMessage = fsUserState.rejectionMessage || expressUserState.rejectionMessage || '';
+          merged.rejectionMessage = winner.rejectionMessage || fsUserState.rejectionMessage || expressUserState.rejectionMessage || '';
         } else {
           merged.activated = Boolean(primaryRemote.activated);
           merged.activationStatus = primaryRemote.activationStatus || (primaryRemote.activated ? 'approved' : 'not_submitted');
-          merged.rejectionMessage = primaryRemote.rejectionMessage || '';
+          merged.rejectionMessage = primaryRemote.rejectionMessage ?? fsUserState.rejectionMessage ?? expressUserState.rejectionMessage ?? '';
         }
       } else if (primaryRemote) {
         merged.activated = Boolean(primaryRemote.activated);
@@ -1554,67 +1577,73 @@ const store = {
     localListeners.add(emitLocal);
     emitLocal();
 
-    const setupFirestore = async () => {
-      const ctx = await getFirestoreContext();
-      if (stopped || !ctx || !u || u === 'demo') return ctx;
-      const docId = toDocId(u);
-      const path = `${COLLECTIONS.users}/${docId}`;
-      const fetchOnce = async () => {
-        try {
-          const snap = await ctx.fs.getDoc(ctx.fs.doc(ctx.db, COLLECTIONS.users, docId));
-          if (!stopped && snap.exists()) {
-            fsUserState = snap.data();
-            mergeAndEmitUser();
-          } else if (!stopped) {
-            const qs = await ctx.fs.getDocs(
-              ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('username', '==', u))
-            );
-            if (!stopped && !qs.empty) {
-              fsUserState = qs.docs[0].data();
-              mergeAndEmitUser();
-            }
-          }
-        } catch {}
-      };
-      void fetchOnce();
+    let fsCtxRef = null;
+    let boundDocId = toDocId(u);
+
+    const attachDocSnapshot = (ctx, targetDocId) => {
+      if (stopped || !ctx) return;
+      if (typeof unsubFirestore === 'function') {
+        try { unsubFirestore(); } catch {}
+        unsubFirestore = null;
+      }
+      boundDocId = targetDocId;
+      const docRef = ctx.fs.doc(ctx.db, COLLECTIONS.users, targetDocId);
+      const path = `${COLLECTIONS.users}/${targetDocId}`;
       unsubFirestore = ctx.fs.onSnapshot(
-        ctx.fs.doc(ctx.db, COLLECTIONS.users, docId),
+        docRef,
         (snap) => {
           if (stopped) return;
           if (snap.exists()) {
             fsUserState = snap.data();
             mergeAndEmitUser();
-          } else {
-            void ctx.fs
-              .getDocs(ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('username', '==', u)))
-              .then((qs) => {
-                if (!stopped && !qs.empty) {
-                  fsUserState = qs.docs[0].data();
-                  mergeAndEmitUser();
-                }
-              })
-              .catch(() => {});
           }
         },
         (error) => {
-          handleSnapshotError(error, OperationType.GET, path, () => {
-            if (!stopped && !pollTimer) {
-              pollTimer = setInterval(() => void fetchOnce(), 3500);
-            }
-          });
+          handleSnapshotError(error, OperationType.GET, path);
         }
       );
+    };
+
+    const fetchFsUserOnce = async () => {
+      const ctx = fsCtxRef || (await getFirestoreContext());
+      if (stopped || !ctx || !u || u === 'demo') return null;
+      fsCtxRef = ctx;
+      try {
+        const snap = await getDocServerFirst(ctx, ctx.fs.doc(ctx.db, COLLECTIONS.users, boundDocId));
+        if (!stopped && snap && snap.exists()) {
+          fsUserState = snap.data();
+          mergeAndEmitUser();
+          return ctx;
+        }
+        const qs = await getDocsServerFirst(
+          ctx,
+          ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('username', '==', u))
+        );
+        if (!stopped && qs && !qs.empty) {
+          const foundDoc = qs.docs[0];
+          fsUserState = foundDoc.data();
+          if (foundDoc.id && foundDoc.id !== boundDocId) {
+            attachDocSnapshot(ctx, foundDoc.id);
+          }
+          mergeAndEmitUser();
+        }
+      } catch {}
       return ctx;
     };
 
     const setupRemote = async () => {
-      const fsCtxPromise = setupFirestore();
-      const [ctx, hasBackend] = await Promise.all([fsCtxPromise, isExpressBackendAvailable()]);
+      const ctx = await fetchFsUserOnce();
+      if (stopped) return;
+      if (ctx && u && u !== 'demo' && !unsubFirestore) {
+        attachDocSnapshot(ctx, boundDocId);
+      }
+
+      const hasBackend = await isExpressBackendAvailable();
       const cfg = getActiveCloudConfig();
       if (stopped) return;
 
       const fetchExpressProfile = async () => {
-        if (stopped || !hasBackend || !u || u === 'demo') return;
+        if (stopped || backendAvailable !== true || !u || u === 'demo') return;
         const res = await apiJson(`/api/users/profile/${encodeURIComponent(u)}`);
         if (!stopped && res.ok && res.data?.success && res.data.user) {
           expressUserState = res.data.user;
@@ -1633,21 +1662,41 @@ const store = {
         sseListeners.add(sseHandler);
       }
 
-      if (!ctx && (hasBackend || (cfg.mode === 'rtdb' && cfg.rtdbUrl))) {
-        const tick = async () => {
-          if (stopped) return;
-          if (hasBackend) {
-            await fetchExpressProfile();
-          } else if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-            const r = await rtdbFetch(`users/${encodeURIComponent(toDocId(u))}`, 'GET');
-            if (!stopped && r.ok && r.data) {
-              expressUserState = r.data;
-              mergeAndEmitUser();
-            }
+      const tick = async (force = false) => {
+        if (stopped) return;
+        if (!force && typeof document !== 'undefined' && document.hidden) return;
+        const activeCfg = getActiveCloudConfig();
+        if (activeCfg.mode === 'rtdb' && activeCfg.rtdbUrl) {
+          const r = await rtdbFetch(`users/${encodeURIComponent(toDocId(u))}`, 'GET');
+          if (!stopped && r.ok && r.data) {
+            expressUserState = r.data;
+            mergeAndEmitUser();
           }
+        } else {
+          await fetchFsUserOnce();
+        }
+        if (backendAvailable === true) {
+          await fetchExpressProfile();
+        }
+      };
+
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        void tick(true);
+      }
+      // Keep fast visible-tab server polling so approvals/replies never wait on stalled WebChannel
+      pollTimer = setInterval(() => void tick(false), 2200);
+
+      if (typeof window !== 'undefined') {
+        focusHandler = () => void tick(true);
+        onlineHandler = () => void tick(true);
+        window.addEventListener('focus', focusHandler);
+        window.addEventListener('online', onlineHandler);
+      }
+      if (typeof document !== 'undefined') {
+        visibilityHandler = () => {
+          if (!stopped && !document.hidden) void tick(true);
         };
-        void tick();
-        pollTimer = setInterval(() => void tick(), 2500);
+        document.addEventListener('visibilitychange', visibilityHandler);
       }
     };
 
@@ -1657,6 +1706,9 @@ const store = {
       stopped = true;
       localListeners.delete(emitLocal);
       if (sseHandler) sseListeners.delete(sseHandler);
+      if (focusHandler && typeof window !== 'undefined') window.removeEventListener('focus', focusHandler);
+      if (onlineHandler && typeof window !== 'undefined') window.removeEventListener('online', onlineHandler);
+      if (visibilityHandler && typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityHandler);
       if (typeof unsubFirestore === 'function') unsubFirestore();
       if (pollTimer) clearInterval(pollTimer);
     };
@@ -1667,6 +1719,9 @@ const store = {
     let pollTimer = null;
     let unsubFirestore = null;
     let sseHandler = null;
+    let focusHandler = null;
+    let onlineHandler = null;
+    let visibilityHandler = null;
     let fsUtrs = null;
     let expressUtrs = null;
 
@@ -1708,20 +1763,27 @@ const store = {
     localListeners.add(emitLocal);
     emitLocal();
 
+    let fsCtxRef = null;
+
+    const fetchFsUtrsOnce = async () => {
+      const ctx = fsCtxRef || (await getFirestoreContext());
+      if (stopped || !ctx || !u || u === 'demo') return null;
+      fsCtxRef = ctx;
+      try {
+        const q = ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.utrs), ctx.fs.where('username', '==', u));
+        const qs = await getDocsServerFirst(ctx, q);
+        if (!stopped && qs) {
+          fsUtrs = qs.docs.map((d) => d.data()).filter(Boolean);
+          mergeAndEmitUtrs();
+        }
+      } catch {}
+      return ctx;
+    };
+
     const setupFirestore = async () => {
-      const ctx = await getFirestoreContext();
+      const ctx = await fetchFsUtrsOnce();
       if (stopped || !ctx || !u || u === 'demo') return ctx;
       const q = ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.utrs), ctx.fs.where('username', '==', u));
-      const fetchOnce = async () => {
-        try {
-          const qs = await ctx.fs.getDocs(q);
-          if (!stopped) {
-            fsUtrs = qs.docs.map((d) => d.data()).filter(Boolean);
-            mergeAndEmitUtrs();
-          }
-        } catch {}
-      };
-      void fetchOnce();
       unsubFirestore = ctx.fs.onSnapshot(
         q,
         (qs) => {
@@ -1730,11 +1792,7 @@ const store = {
           mergeAndEmitUtrs();
         },
         (error) => {
-          handleSnapshotError(error, OperationType.LIST, COLLECTIONS.utrs, () => {
-            if (!stopped && !pollTimer) {
-              pollTimer = setInterval(() => void fetchOnce(), 3500);
-            }
-          });
+          handleSnapshotError(error, OperationType.LIST, COLLECTIONS.utrs);
         }
       );
       return ctx;
@@ -1742,12 +1800,12 @@ const store = {
 
     const setupRemote = async () => {
       const fsCtxPromise = setupFirestore();
-      const [ctx, hasBackend] = await Promise.all([fsCtxPromise, isExpressBackendAvailable()]);
+      const [, hasBackend] = await Promise.all([fsCtxPromise, isExpressBackendAvailable()]);
       const cfg = getActiveCloudConfig();
       if (stopped) return;
 
       const fetchExpressUtrs = async () => {
-        if (stopped || !hasBackend || !u || u === 'demo') return;
+        if (stopped || backendAvailable !== true || !u || u === 'demo') return;
         const res = await apiJson(`/api/users/profile/${encodeURIComponent(u)}`);
         if (!stopped && res.ok && res.data?.success && Array.isArray(res.data.utrs)) {
           expressUtrs = res.data.utrs;
@@ -1766,21 +1824,40 @@ const store = {
         sseListeners.add(sseHandler);
       }
 
-      if (!ctx && (hasBackend || (cfg.mode === 'rtdb' && cfg.rtdbUrl))) {
-        const tick = async () => {
-          if (stopped) return;
-          if (hasBackend) {
-            await fetchExpressUtrs();
-          } else if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-            const r = await rtdbFetch('utrs', 'GET');
-            if (!stopped && r.ok && r.data && typeof r.data === 'object') {
-              expressUtrs = Object.values(r.data).filter((w) => w && w.username === u);
-              mergeAndEmitUtrs();
-            }
+      const tick = async (force = false) => {
+        if (stopped) return;
+        if (!force && typeof document !== 'undefined' && document.hidden) return;
+        const activeCfg = getActiveCloudConfig();
+        if (activeCfg.mode === 'rtdb' && activeCfg.rtdbUrl) {
+          const r = await rtdbFetch('utrs', 'GET');
+          if (!stopped && r.ok && r.data && typeof r.data === 'object') {
+            expressUtrs = Object.values(r.data).filter((w) => w && w.username === u);
+            mergeAndEmitUtrs();
           }
+        } else {
+          await fetchFsUtrsOnce();
+        }
+        if (backendAvailable === true) {
+          await fetchExpressUtrs();
+        }
+      };
+
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        void tick(true);
+      }
+      pollTimer = setInterval(() => void tick(false), 2200);
+
+      if (typeof window !== 'undefined') {
+        focusHandler = () => void tick(true);
+        onlineHandler = () => void tick(true);
+        window.addEventListener('focus', focusHandler);
+        window.addEventListener('online', onlineHandler);
+      }
+      if (typeof document !== 'undefined') {
+        visibilityHandler = () => {
+          if (!stopped && !document.hidden) void tick(true);
         };
-        void tick();
-        pollTimer = setInterval(() => void tick(), 2000);
+        document.addEventListener('visibilitychange', visibilityHandler);
       }
     };
 
@@ -1790,6 +1867,9 @@ const store = {
       stopped = true;
       localListeners.delete(emitLocal);
       if (sseHandler) sseListeners.delete(sseHandler);
+      if (focusHandler && typeof window !== 'undefined') window.removeEventListener('focus', focusHandler);
+      if (onlineHandler && typeof window !== 'undefined') window.removeEventListener('online', onlineHandler);
+      if (visibilityHandler && typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityHandler);
       if (typeof unsubFirestore === 'function') unsubFirestore();
       if (pollTimer) clearInterval(pollTimer);
     };
@@ -2660,8 +2740,8 @@ const store = {
           if (liveCtx) {
             if (!fsAttached) {
               void setupFirestore(true);
-            } else if (fsDegraded) {
-              await pullFirestoreCollections(liveCtx, false);
+            } else {
+              await pullFirestoreCollections(liveCtx, true);
             }
           }
         }
@@ -2670,7 +2750,7 @@ const store = {
       if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
         void tick();
       }
-      pollTimer = setInterval(() => void tick(), ctx && !fsDegraded ? 10000 : 3500);
+      pollTimer = setInterval(() => void tick(), ctx && !fsDegraded ? 6000 : 3000);
 
       if (typeof window !== 'undefined') {
         onlineHandler = () => {
@@ -2802,15 +2882,15 @@ const store = {
     }
   },
 
-  async adminApproveUtr(utrId, uname, itemHint = null) {
+  async adminApproveUtr(utrId, uname, itemHint = null, customMessage = '') {
     const utrs = getLocalUtrs();
     let item = utrs.find((u) => u && (u.id === utrId || u.utr === utrId)) || itemHint || null;
 
     const fsCtx = await getFirestoreContext();
     if (!item && fsCtx && utrId) {
       try {
-        const snap = await fsCtx.fs.getDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, utrId));
-        if (snap.exists()) item = snap.data();
+        const snap = await getDocServerFirst(fsCtx, fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, utrId));
+        if (snap && snap.exists()) item = snap.data();
       } catch {}
     }
 
@@ -2822,6 +2902,7 @@ const store = {
           String(item.type || '').toLowerCase().includes('upgrade'))
     );
     const nextStatus = is199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
+    const noteMsg = String(customMessage || '').trim().slice(0, 300);
 
     if (item) {
       item.status = nextStatus;
@@ -2837,7 +2918,7 @@ const store = {
       if (users[resolvedUname]) {
         users[resolvedUname].activated = true;
         users[resolvedUname].activationStatus = 'approved';
-        users[resolvedUname].rejectionMessage = '';
+        users[resolvedUname].rejectionMessage = noteMsg;
         saveLocalUsersMap(users);
       }
     }
@@ -2846,9 +2927,9 @@ const store = {
       ? pushLocalActivity(
           resolvedUname,
           'admin_approve',
-          is199
+          (is199
             ? `Admin verified ₹199 UTR (${item?.utr || utrId}) & issued receipt`
-            : `Admin approved ₹399 UTR (${item?.utr || utrId}) & started panel`,
+            : `Admin approved ₹399 UTR (${item?.utr || utrId}) & started panel`) + (noteMsg ? ` • Note: ${noteMsg}` : ''),
           'admin',
           'success'
         )
@@ -2859,41 +2940,58 @@ const store = {
     const tasks = [];
     if (fsCtx) {
       const targetDocId = sanitizeSafeId(String(item?.id || utrId || ''), 'WTH');
-      if (targetDocId) {
-        tasks.push(
-          (async () => {
-            try {
+      const utrNum = String(item?.utr || '').trim();
+      tasks.push(
+        (async () => {
+          try {
+            let updatedAny = false;
+            if (targetDocId) {
               const utrRef = fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId);
-              const existingUtr = await fsCtx.fs.getDoc(utrRef);
-              if (existingUtr.exists()) {
+              const existingUtr = await getDocServerFirst(fsCtx, utrRef);
+              if (existingUtr && existingUtr.exists()) {
                 await fsCtx.fs.updateDoc(utrRef, { status: nextStatus });
-              } else {
-                const fullUtr = sanitizeUtrEntry(
-                  item || {
-                    id: targetDocId,
-                    username: resolvedUname || 'user',
-                    type: is199 ? 'Upgrade Limit (₹199)' : 'Activation Payment (₹399)',
-                    amount: is199 ? 199 : 399,
-                    utr: String(utrId || ''),
-                    tokenNumber: String(utrId || ''),
-                  },
-                  targetDocId,
-                  nextStatus
-                );
-                await fsCtx.fs.setDoc(utrRef, fullUtr);
+                updatedAny = true;
               }
-            } catch (err) {
-              console.error('Firestore adminApproveUtr UTR write warning:', err);
             }
-          })()
-        );
-      }
+            if (utrNum) {
+              const qs = await getDocsServerFirst(
+                fsCtx,
+                fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs), fsCtx.fs.where('utr', '==', utrNum))
+              );
+              if (qs && !qs.empty) {
+                for (const d of qs.docs) {
+                  await fsCtx.fs.updateDoc(d.ref, { status: nextStatus });
+                  updatedAny = true;
+                }
+              }
+            }
+            if (!updatedAny && targetDocId) {
+              const utrRef = fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId);
+              const fullUtr = sanitizeUtrEntry(
+                item || {
+                  id: targetDocId,
+                  username: resolvedUname || 'user',
+                  type: is199 ? 'Upgrade Limit (₹199)' : 'Activation Payment (₹399)',
+                  amount: is199 ? 199 : 399,
+                  utr: String(utrId || ''),
+                  tokenNumber: String(utrId || ''),
+                },
+                targetDocId,
+                nextStatus
+              );
+              await fsCtx.fs.setDoc(utrRef, fullUtr);
+            }
+          } catch (err) {
+            console.error('Firestore adminApproveUtr UTR write warning:', err);
+          }
+        })()
+      );
       if (resolvedUname) {
         tasks.push(
           fsUpsertUser(resolvedUname, {
             activated: true,
             activationStatus: 'approved',
-            rejectionMessage: '',
+            rejectionMessage: noteMsg,
           }).catch((err) => {
             console.error('Firestore adminApproveUtr user activate error:', err);
           })
@@ -2906,7 +3004,7 @@ const store = {
       apiJson('/api/admin/utr/approve', {
         method: 'POST',
         headers: { 'x-admin-token': getStoredAdminToken() },
-        body: JSON.stringify({ utrId, username: resolvedUname, utrRecord: item }),
+        body: JSON.stringify({ utrId, username: resolvedUname, utrRecord: item, message: noteMsg }),
       })
     );
 
@@ -2918,7 +3016,7 @@ const store = {
           rtdbFetch(`users/${encodeURIComponent(toDocId(resolvedUname))}`, 'PATCH', {
             activated: true,
             activationStatus: 'approved',
-            rejectionMessage: '',
+            rejectionMessage: noteMsg,
           })
         );
       }
@@ -2929,8 +3027,8 @@ const store = {
     return true;
   },
 
-  async adminRejectUtr(utrId, uname, itemHint = null) {
-    const rejectMsg = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
+  async adminRejectUtr(utrId, uname, itemHint = null, customMessage = '') {
+    const rejectMsg = String(customMessage || '').trim().slice(0, 300) || 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
     const utrs = getLocalUtrs();
     let item = utrs.find((u) => u && (u.id === utrId || u.utr === utrId)) || itemHint || null;
     const nextStatus = '❌ Rejected (Invalid UTR)';
@@ -2938,8 +3036,8 @@ const store = {
     const fsCtx = await getFirestoreContext();
     if (!item && fsCtx && utrId) {
       try {
-        const snap = await fsCtx.fs.getDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, utrId));
-        if (snap.exists()) item = snap.data();
+        const snap = await getDocServerFirst(fsCtx, fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, utrId));
+        if (snap && snap.exists()) item = snap.data();
       } catch {}
     }
 
@@ -2964,7 +3062,7 @@ const store = {
     }
 
     const act = resolvedUname
-      ? pushLocalActivity(resolvedUname, 'admin_reject', `Admin rejected UTR (${item?.utr || utrId})`, 'admin', 'warning')
+      ? pushLocalActivity(resolvedUname, 'admin_reject', `Admin rejected UTR (${item?.utr || utrId}) • Note: ${rejectMsg}`, 'admin', 'warning')
       : null;
 
     broadcastSyncEvent('admin_reject_utr');
@@ -2972,23 +3070,39 @@ const store = {
     const tasks = [];
     if (fsCtx) {
       const targetDocId = sanitizeSafeId(String(item?.id || utrId || ''), 'WTH');
-      if (targetDocId) {
-        tasks.push(
-          (async () => {
-            try {
+      const utrNum = String(item?.utr || '').trim();
+      tasks.push(
+        (async () => {
+          try {
+            let updatedAny = false;
+            if (targetDocId) {
               const utrRef = fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId);
-              const existingUtr = await fsCtx.fs.getDoc(utrRef);
-              if (existingUtr.exists()) {
+              const existingUtr = await getDocServerFirst(fsCtx, utrRef);
+              if (existingUtr && existingUtr.exists()) {
                 await fsCtx.fs.updateDoc(utrRef, { status: nextStatus });
-              } else if (item) {
-                await fsCtx.fs.setDoc(utrRef, sanitizeUtrEntry(item, targetDocId, nextStatus));
+                updatedAny = true;
               }
-            } catch (err) {
-              console.error('Firestore adminRejectUtr UTR write warning:', err);
             }
-          })()
-        );
-      }
+            if (utrNum) {
+              const qs = await getDocsServerFirst(
+                fsCtx,
+                fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs), fsCtx.fs.where('utr', '==', utrNum))
+              );
+              if (qs && !qs.empty) {
+                for (const d of qs.docs) {
+                  await fsCtx.fs.updateDoc(d.ref, { status: nextStatus });
+                  updatedAny = true;
+                }
+              }
+            }
+            if (!updatedAny && targetDocId && item) {
+              await fsCtx.fs.setDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId), sanitizeUtrEntry(item, targetDocId, nextStatus));
+            }
+          } catch (err) {
+            console.error('Firestore adminRejectUtr UTR write warning:', err);
+          }
+        })()
+      );
       if (resolvedUname) {
         tasks.push(
           fsUpsertUser(resolvedUname, {
@@ -3007,7 +3121,7 @@ const store = {
       apiJson('/api/admin/utr/reject', {
         method: 'POST',
         headers: { 'x-admin-token': getStoredAdminToken() },
-        body: JSON.stringify({ utrId, username: resolvedUname, utrRecord: item }),
+        body: JSON.stringify({ utrId, username: resolvedUname, utrRecord: item, message: rejectMsg }),
       })
     );
 
@@ -3030,16 +3144,17 @@ const store = {
     return true;
   },
 
-  async adminApproveUserPanel(uname) {
+  async adminApproveUserPanel(uname, customMessage = '') {
+    const noteMsg = String(customMessage || '').trim().slice(0, 300);
     const users = getLocalUsersMap();
     if (users[uname]) {
       users[uname].activated = true;
       users[uname].activationStatus = 'approved';
-      users[uname].rejectionMessage = '';
+      users[uname].rejectionMessage = noteMsg;
       saveLocalUsersMap(users);
     }
 
-    const act = pushLocalActivity(uname, 'admin_approve', 'Admin approved panel & started transactions', 'admin', 'success');
+    const act = pushLocalActivity(uname, 'admin_approve', `Admin approved panel & started transactions${noteMsg ? ` • Note: ${noteMsg}` : ''}`, 'admin', 'success');
     broadcastSyncEvent('admin_approve_user');
 
     const cfg = getActiveCloudConfig();
@@ -3047,14 +3162,14 @@ const store = {
       fsUpsertUser(uname, {
         activated: true,
         activationStatus: 'approved',
-        rejectionMessage: '',
+        rejectionMessage: noteMsg,
       }).catch((err) => {
         console.error('Firestore adminApproveUserPanel error:', err);
       }),
       apiJson('/api/admin/approve-user', {
         method: 'POST',
         headers: { 'x-admin-token': getStoredAdminToken() },
-        body: JSON.stringify({ username: uname }),
+        body: JSON.stringify({ username: uname, message: noteMsg }),
       }).then((res) => {
         if (res.ok && res.data?.user) {
           const curUsers = getLocalUsersMap();
@@ -3069,7 +3184,7 @@ const store = {
         rtdbFetch(`users/${encodeURIComponent(toDocId(uname))}`, 'PATCH', {
           activated: true,
           activationStatus: 'approved',
-          rejectionMessage: '',
+          rejectionMessage: noteMsg,
         })
       );
     }
@@ -3078,8 +3193,8 @@ const store = {
     return getLocalUsersMap()[uname] || null;
   },
 
-  async adminRejectUserPayment(uname) {
-    const msg = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
+  async adminRejectUserPayment(uname, customMessage = '') {
+    const msg = String(customMessage || '').trim().slice(0, 300) || 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
     const users = getLocalUsersMap();
     if (users[uname]) {
       users[uname].activated = false;
@@ -3088,7 +3203,7 @@ const store = {
       saveLocalUsersMap(users);
     }
 
-    const act = pushLocalActivity(uname, 'admin_reject', 'Admin rejected payment — awaiting charges resubmission', 'admin', 'warning');
+    const act = pushLocalActivity(uname, 'admin_reject', `Admin rejected payment — ${msg}`, 'admin', 'warning');
     broadcastSyncEvent('admin_reject_user');
 
     const cfg = getActiveCloudConfig();
@@ -3103,7 +3218,7 @@ const store = {
       apiJson('/api/admin/reject-user', {
         method: 'POST',
         headers: { 'x-admin-token': getStoredAdminToken() },
-        body: JSON.stringify({ username: uname }),
+        body: JSON.stringify({ username: uname, message: msg }),
       }).then((res) => {
         if (res.ok && res.data?.user) {
           const curUsers = getLocalUsersMap();
@@ -3125,6 +3240,54 @@ const store = {
     await Promise.allSettled(tasks);
     broadcastSyncEvent('admin_reject_user');
     return getLocalUsersMap()[uname] || null;
+  },
+
+  async adminSendUserMessage(uname, message) {
+    const cleanUname = String(uname || '').trim();
+    const cleanMsg = String(message || '').trim().slice(0, 300);
+    if (!cleanUname || cleanUname === 'demo') {
+      return { success: false, message: 'Valid username required.' };
+    }
+
+    const users = getLocalUsersMap();
+    if (users[cleanUname]) {
+      users[cleanUname].rejectionMessage = cleanMsg;
+      saveLocalUsersMap(users);
+    }
+
+    const act = pushLocalActivity(
+      cleanUname,
+      'admin_message',
+      cleanMsg ? `Admin sent reply to @${cleanUname}: ${cleanMsg}` : `Admin cleared message for @${cleanUname}`,
+      'admin',
+      'info'
+    );
+    broadcastSyncEvent('admin_user_message');
+
+    const cfg = getActiveCloudConfig();
+    const tasks = [
+      fsUpsertUser(cleanUname, { rejectionMessage: cleanMsg }).catch((err) => {
+        console.error('Firestore adminSendUserMessage error:', err);
+      }),
+      apiJson('/api/admin/user-message', {
+        method: 'POST',
+        headers: { 'x-admin-token': getStoredAdminToken() },
+        body: JSON.stringify({ username: cleanUname, message: cleanMsg }),
+      }).then((res) => {
+        if (res.ok && res.data?.user) {
+          const curUsers = getLocalUsersMap();
+          curUsers[cleanUname] = res.data.user;
+          saveLocalUsersMap(curUsers);
+        }
+      }),
+    ];
+    if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
+    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+      tasks.push(rtdbFetch(`users/${encodeURIComponent(toDocId(cleanUname))}`, 'PATCH', { rejectionMessage: cleanMsg }));
+    }
+    await Promise.allSettled(tasks);
+    broadcastSyncEvent('admin_user_message');
+    return { success: true, user: getLocalUsersMap()[cleanUname] || null };
   },
 
   async adminToggleUserActivation(uname, curr) {

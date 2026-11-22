@@ -973,7 +973,8 @@ async function startServer() {
       return res.status(401).json({ success: false, message: 'Admin authentication required.' });
     }
 
-    const { utrId, username, utrRecord } = req.body || {};
+    const { utrId, username, utrRecord, message } = req.body || {};
+    const customMsg = String(message || '').trim().slice(0, 300);
     let utrItem = db.utrs.find((u) => u.id === utrId || u.utr === utrId);
     if (!utrItem && utrRecord && utrRecord.id) {
       utrItem = {
@@ -1007,7 +1008,7 @@ async function startServer() {
       const userObj = ensureUserRecord(targetUser);
       userObj.activated = true;
       userObj.activationStatus = 'approved';
-      userObj.rejectionMessage = '';
+      userObj.rejectionMessage = customMsg;
       pushActivityLog(targetUser, 'activation', `Admin approved UTR (${utrItem?.utr || utrId}) and activated account for @${targetUser}`, 'activation', 'success');
     }
 
@@ -1022,7 +1023,8 @@ async function startServer() {
       return res.status(401).json({ success: false, message: 'Admin authentication required.' });
     }
 
-    const { utrId, username, utrRecord } = req.body || {};
+    const { utrId, username, utrRecord, message } = req.body || {};
+    const rejectMsg = String(message || '').trim().slice(0, 300) || 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
     let utrItem = db.utrs.find((u) => u.id === utrId || u.utr === utrId);
     if (!utrItem && utrRecord && utrRecord.id) {
       utrItem = {
@@ -1050,7 +1052,7 @@ async function startServer() {
       const userObj = ensureUserRecord(targetUser);
       userObj.activated = false;
       userObj.activationStatus = 'rejected';
-      userObj.rejectionMessage = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
+      userObj.rejectionMessage = rejectMsg;
     }
     pushActivityLog(targetUser || 'User', 'withdrawal', `Admin rejected submitted UTR (${utrItem?.utr || utrId}) for @${targetUser || 'User'}`, 'security', 'warning');
     saveDatabase(db);
@@ -1063,7 +1065,7 @@ async function startServer() {
     if (!isAdminTokenValid(req)) {
       return res.status(401).json({ success: false, message: 'Admin authentication required.' });
     }
-    const { username } = req.body || {};
+    const { username, message } = req.body || {};
     const uname = String(username || '').trim();
     if (!uname || uname === 'demo') {
       return res.status(400).json({ success: false, message: 'Valid username required' });
@@ -1071,7 +1073,7 @@ async function startServer() {
     const userObj = ensureUserRecord(uname);
     userObj.activated = true;
     userObj.activationStatus = 'approved';
-    userObj.rejectionMessage = '';
+    userObj.rejectionMessage = String(message || '').trim().slice(0, 300);
     pushActivityLog(uname, 'activation', `Admin approved panel for @${uname}`, 'activation', 'success');
     saveDatabase(db);
     broadcastServerEvent('admin_approve_user', { username: uname });
@@ -1082,12 +1084,12 @@ async function startServer() {
     if (!isAdminTokenValid(req)) {
       return res.status(401).json({ success: false, message: 'Admin authentication required.' });
     }
-    const { username } = req.body || {};
+    const { username, message } = req.body || {};
     const uname = String(username || '').trim();
     if (!uname || uname === 'demo') {
       return res.status(400).json({ success: false, message: 'Valid username required' });
     }
-    const msg = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
+    const msg = String(message || '').trim().slice(0, 300) || 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
     const userObj = ensureUserRecord(uname);
     userObj.activated = false;
     userObj.activationStatus = 'rejected';
@@ -1095,6 +1097,24 @@ async function startServer() {
     pushActivityLog(uname, 'withdrawal', `Admin rejected payment for @${uname}`, 'security', 'warning');
     saveDatabase(db);
     broadcastServerEvent('admin_reject_user', { username: uname });
+    return res.json({ success: true, user: userObj });
+  });
+
+  app.post('/api/admin/user-message', (req: Request, res: Response) => {
+    if (!isAdminTokenValid(req)) {
+      return res.status(401).json({ success: false, message: 'Admin authentication required.' });
+    }
+    const { username, message } = req.body || {};
+    const uname = String(username || '').trim();
+    if (!uname || uname === 'demo') {
+      return res.status(400).json({ success: false, message: 'Valid username required' });
+    }
+    const cleanMsg = String(message || '').trim().slice(0, 300);
+    const userObj = ensureUserRecord(uname);
+    userObj.rejectionMessage = cleanMsg;
+    pushActivityLog(uname, 'admin_message', cleanMsg ? `Admin replied to @${uname}: ${cleanMsg}` : `Admin cleared note for @${uname}`, 'admin', 'info');
+    saveDatabase(db);
+    broadcastServerEvent('admin_user_message', { username: uname });
     return res.json({ success: true, user: userObj });
   });
 

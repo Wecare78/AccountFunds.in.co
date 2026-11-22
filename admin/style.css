@@ -1340,12 +1340,12 @@ select:focus-visible {
 
 .payment-notification-container {
     position: fixed;
-    top: 48px;
+    top: calc(56px + env(safe-area-inset-top, 0px));
     left: 50%;
     transform: translateX(-50%);
     width: calc(100% - 24px);
     max-width: 410px;
-    z-index: 1200;
+    z-index: 1950;
     pointer-events: none;
     display: flex;
     flex-direction: column;
@@ -1843,9 +1843,9 @@ select:focus-visible {
 }
 
 @media (max-width: 600px) {
-    body { padding-top: 54px; }
+    body:not(.app-shell-body):not(.admin-body) { padding-top: 54px; }
     .payment-notification-container {
-        top: 44px;
+        top: calc(52px + env(safe-area-inset-top, 0px));
         width: calc(100% - 16px);
     }
     .tc-notification-card,
@@ -1883,7 +1883,7 @@ select:focus-visible {
 
 @media (max-width: 380px) {
     .payment-notification-container {
-        top: 42px;
+        top: calc(52px + env(safe-area-inset-top, 0px));
         width: calc(100% - 12px);
     }
     .tc-notification-card,
@@ -2408,19 +2408,18 @@ select:focus-visible {
 .admin-body {
     background: #080c16;
     color: #f1f5f9;
-    padding: 48px 16px 40px;
+    padding: 0 14px 36px;
     font-family: var(--font-family);
     min-height: 100dvh;
 }
 
 .admin-server-banner {
-    position: fixed;
+    position: sticky;
     top: 0;
-    left: 0;
-    right: 0;
+    margin: 0 -14px;
     background: linear-gradient(90deg, #1e293b, #0f172a);
     border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-    padding: 6px 16px;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) 12px 7px;
     font-size: 0.74rem;
     z-index: 2000;
     color: #cbd5e1;
@@ -2431,7 +2430,12 @@ select:focus-visible {
     margin: 0 auto;
     display: flex;
     align-items: center;
-    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 3px 8px;
+    font-size: 0.7rem;
+    line-height: 1.3;
+    text-align: center;
     font-family: 'JetBrains Mono', monospace;
 }
 
@@ -2611,7 +2615,7 @@ select:focus-visible {
 
 .admin-search-wrap {
     flex: 1;
-    min-width: 260px;
+    min-width: min(240px, 100%);
     display: flex;
     align-items: center;
     background: rgba(15, 23, 42, 0.7);
@@ -2914,6 +2918,8 @@ select:focus-visible {
     border-bottom: 1px solid rgba(148, 163, 184, 0.08);
     color: #e2e8f0;
     vertical-align: middle;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .admin-table tbody tr {
@@ -3029,9 +3035,12 @@ select:focus-visible {
 }
 
 .bank-mini-icon {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: #ffffff;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    padding: 2px;
     overflow: hidden;
     flex-shrink: 0;
     display: flex;
@@ -3043,7 +3052,8 @@ select:focus-visible {
 .bank-mini-icon img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    display: block;
 }
 
 .mono-time {
@@ -3093,8 +3103,9 @@ select:focus-visible {
     border-radius: 20px;
     width: 100%;
     max-width: 680px;
-    max-height: 85vh;
+    max-height: 90dvh;
     overflow-y: auto;
+    overflow-wrap: anywhere;
     padding: 24px;
     box-shadow: 0 25px 60px rgba(0, 0, 0, 0.6);
 }
@@ -3103,20 +3114,23 @@ select:focus-visible {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 10px;
     border-bottom: 1px solid rgba(148, 163, 184, 0.15);
     padding-bottom: 14px;
     margin-bottom: 16px;
 }
 
 .admin-modal-header h3 {
-    font-size: 1.3rem;
+    font-size: 1.12rem;
     font-weight: 800;
     color: #ffffff;
+    overflow-wrap: anywhere;
 }
 
 .admin-modal-subtitle {
     font-size: 0.82rem;
     color: #94a3b8;
+    overflow-wrap: anywhere;
 }
 
 .admin-modal-close {
@@ -3125,6 +3139,7 @@ select:focus-visible {
     color: #cbd5e1;
     width: 32px;
     height: 32px;
+    flex-shrink: 0;
     border-radius: 8px;
     cursor: pointer;
     font-size: 1rem;
@@ -3153,6 +3168,10 @@ select:focus-visible {
     .admin-toolbar {
         flex-direction: column;
         align-items: stretch;
+    }
+    .admin-search-wrap {
+        min-width: 0;
+        width: 100%;
     }
 }
 
@@ -4220,7 +4239,12 @@ select:focus-visible {
         border-bottom: none;
         justify-content: flex-end;
         flex-wrap: wrap;
+        gap: 6px;
         padding-top: 10px;
+    }
+
+    #withdrawalsTable td:last-child .btn-reject-utr {
+        margin-left: 0;
     }
 
     #withdrawalsTable td:last-child::before {
@@ -4230,7 +4254,7 @@ select:focus-visible {
 
 @media (max-width: 480px) {
     .admin-container {
-        margin-top: 8px;
+        margin-top: 10px;
         gap: 10px;
     }
 
@@ -4251,7 +4275,7 @@ select:focus-visible {
     }
 
     .admin-metrics-grid {
-        margin-top: -6px;
+        margin-top: 0;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
     }
@@ -5136,6 +5160,12 @@ select:focus-visible {
     gap: 12px;
 }
 
+.admin-modal-grid > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 .admin-modal-span2 {
     grid-column: span 2;
 }
@@ -5930,7 +5960,7 @@ body.app-shell-body {
 }
 
 body.admin-body.app-shell-body {
-    padding-top: 48px;
+    padding: 0 14px 36px;
 }
 
 .auth-container {
@@ -6975,14 +7005,35 @@ body.admin-body.app-shell-body .admin-gatekeeper-card .fintech-card-hero {
 }
 
 @media (max-width: 600px) {
-    body.app-shell-body {
+    body.app-shell-body:not(.admin-body) {
         padding-top: calc(64px + env(safe-area-inset-top, 0px));
         padding-left: 11px;
         padding-right: 11px;
     }
 
+    body.admin-body,
+    body.admin-body.app-shell-body {
+        padding: 0 10px 28px !important;
+    }
+
+    .admin-server-banner {
+        margin: 0 -10px;
+    }
+
+    .admin-modal-card {
+        padding: 16px 12px;
+    }
+
+    .admin-modal-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-modal-span2 {
+        grid-column: auto;
+    }
+
     .payment-notification-container {
-        top: calc(58px + env(safe-area-inset-top, 0px));
+        top: calc(52px + env(safe-area-inset-top, 0px));
     }
 
     .brand-tagline-mini {
@@ -7073,6 +7124,12 @@ body.admin-body.app-shell-body .admin-gatekeeper-card .fintech-card-hero {
     .app-trust-strip {
         gap: 4px;
         padding: 10px 6px;
+    }
+}
+
+@media (max-width: 520px) {
+    .banner-divider {
+        display: none;
     }
 }
 

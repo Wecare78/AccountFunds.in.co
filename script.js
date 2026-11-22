@@ -1338,9 +1338,61 @@ const BANK_LOGO_URL_MAP = {
     }
 };
 
-// Helper: Convert SVG string to data URI for resilient, 100% reliable logo image rendering
+const OFFICIAL_BANK_LOGO_SLUGS = {
+    'sbi': 'sbin',
+    'hdfc': 'hdfc',
+    'icici': 'icic',
+    'axis': 'utib',
+    'kotak': 'kkbk',
+    'pnb': 'punb',
+    'baroda': 'barb',
+    'canara': 'cnrb',
+    'union': 'ubin',
+    'bank of india': 'bkid',
+    'idfc': 'idfb',
+    'idbi': 'ibkl',
+    'indian': 'idib',
+    'indusind': 'indb',
+    'yes': 'yesb',
+    'federal': 'fdrl',
+    'au small': 'aubl',
+    'rbl': 'ratn',
+    'bandhan': 'bdbl',
+    'paytm': 'pytm',
+    'airtel': 'airp',
+    'india post': 'ipos',
+    'jio': 'jiop',
+    'fino': 'fino',
+    'equitas': 'esfb',
+    'ujjivan': 'ujvn',
+    'central': 'cbin',
+    'overseas': 'ioba',
+    'uco': 'ucba',
+    'maharashtra': 'mahb',
+    'punjab & sind': 'psib',
+    'karnataka': 'karb',
+    'south indian': 'sibl',
+    'karur': 'kvbl',
+    'hsbc': 'hsbc',
+    'standard chartered': 'scbl',
+    'citi': 'citi',
+    'dbs': 'dbss',
+    'deutsche': 'deut',
+    'jana': 'jsfb'
+};
+
+// Helper: Convert SVG string to data URI for resilient fallback logo image rendering
 function svgToDataUrl(svgString) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svgString.trim())}`;
+}
+
+// Helper: Render official bank logo <img> with zero-flicker SVG fallback
+function renderBankLogoImgHtml(brand, imgClass = '') {
+    if (!brand) return '🏦';
+    const clsAttr = imgClass ? ` class="${imgClass}"` : '';
+    const safeAlt = String(brand.bankName || 'Bank').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const url = brand.logoUrl || svgToDataUrl(brand.logoSvg);
+    return `<img src="${url}" alt="${safeAlt}"${clsAttr} referrerpolicy="no-referrer" onerror="this.style.display='none'; if(this.nextElementSibling){this.nextElementSibling.style.display='flex';}" /><span class="bank-inline-logo-fallback" style="display:none;">${brand.logoSvg}</span>`;
 }
 
 // Helper: Generate a distinct monogram crest SVG for any regional/cooperative/rural Indian bank
@@ -1369,51 +1421,55 @@ function getBankBrandInfo(rawBankName, customLogoUrl) {
 
     // Exact/alias priority match against Indian banks
     const aliases = [
-        ['bank of india', () => name.includes('bank of india') && !name.includes('state bank') && !name.includes('central bank') && !name.includes('union bank')],
-        ['india post', () => name.includes('india post') || name.includes('ippb')],
-        ['punjab & sind', () => name.includes('punjab & sind') || name.includes('punjab and sind')],
-        ['au small', () => name.includes('au small') || name.includes('au bank')],
-        ['south indian', () => name.includes('south indian')],
-        ['standard chartered', () => name.includes('standard chartered')],
+        ['bank of india', () => (name.includes('bank of india') || name.includes('bkid')) && !name.includes('state bank') && !name.includes('central bank') && !name.includes('union bank')],
+        ['india post', () => name.includes('india post') || name.includes('ippb') || name.includes('ipos')],
+        ['punjab & sind', () => name.includes('punjab & sind') || name.includes('punjab and sind') || name.includes('psib')],
+        ['au small', () => name.includes('au small') || name.includes('au bank') || name.includes('aubl')],
+        ['south indian', () => name.includes('south indian') || name.includes('sibl')],
+        ['standard chartered', () => name.includes('standard chartered') || name.includes('scbl')],
         ['overseas', () => name.includes('overseas') || name.includes('iob')],
         ['sbi', () => name.includes('sbi') || name.includes('state bank')],
         ['hdfc', () => name.includes('hdfc')],
-        ['icici', () => name.includes('icici')],
-        ['axis', () => name.includes('axis')],
-        ['kotak', () => name.includes('kotak')],
-        ['pnb', () => name.includes('pnb') || name.includes('punjab national')],
-        ['baroda', () => name.includes('baroda') || name.includes('bob')],
-        ['canara', () => name.includes('canara')],
-        ['union', () => name.includes('union bank')],
-        ['idfc', () => name.includes('idfc')],
-        ['idbi', () => name.includes('idbi')],
-        ['indian', () => name.includes('indian bank')],
-        ['indusind', () => name.includes('indusind')],
-        ['yes', () => name.includes('yes bank')],
-        ['federal', () => name.includes('federal')],
-        ['rbl', () => name.includes('rbl')],
-        ['bandhan', () => name.includes('bandhan')],
-        ['paytm', () => name.includes('paytm')],
-        ['airtel', () => name.includes('airtel')],
+        ['icici', () => name.includes('icici') || name.includes('icic')],
+        ['axis', () => name.includes('axis') || name.includes('utib')],
+        ['kotak', () => name.includes('kotak') || name.includes('kkbk')],
+        ['pnb', () => name.includes('pnb') || name.includes('punjab national') || name.includes('punb')],
+        ['baroda', () => name.includes('baroda') || name.includes('bob') || name.includes('barb')],
+        ['canara', () => name.includes('canara') || name.includes('cnrb')],
+        ['union', () => name.includes('union bank') || name.includes('ubin')],
+        ['idfc', () => name.includes('idfc') || name.includes('idfb')],
+        ['idbi', () => name.includes('idbi') || name.includes('ibkl')],
+        ['indian', () => name.includes('indian bank') || name.includes('idib')],
+        ['indusind', () => name.includes('indusind') || name.includes('indb')],
+        ['yes', () => name.includes('yes bank') || name === 'yes' || name.includes('yesb')],
+        ['federal', () => name.includes('federal') || name.includes('fdrl')],
+        ['rbl', () => name.includes('rbl') || name.includes('ratn')],
+        ['bandhan', () => name.includes('bandhan') || name.includes('bdbl')],
+        ['paytm', () => name.includes('paytm') || name.includes('pytm')],
+        ['airtel', () => name.includes('airtel') || name.includes('airp')],
         ['jio', () => name.includes('jio')],
         ['fino', () => name.includes('fino')],
-        ['equitas', () => name.includes('equitas')],
-        ['ujjivan', () => name.includes('ujjivan')],
-        ['central', () => name.includes('central bank')],
-        ['uco', () => name.includes('uco')],
-        ['maharashtra', () => name.includes('maharashtra')],
-        ['karnataka', () => name.includes('karnataka')],
+        ['equitas', () => name.includes('equitas') || name.includes('esfb')],
+        ['ujjivan', () => name.includes('ujjivan') || name.includes('ujvn')],
+        ['central', () => name.includes('central bank') || name.includes('cbin')],
+        ['uco', () => name.includes('uco') || name.includes('ucba')],
+        ['maharashtra', () => name.includes('maharashtra') || name.includes('mahb')],
+        ['karnataka', () => (name.includes('karnataka') && !name.includes('gramin') && !name.includes('vikas')) || name.includes('karb')],
         ['karur', () => name.includes('karur') || name.includes('kvb')],
         ['hsbc', () => name.includes('hsbc')],
         ['citi', () => name.includes('citi')],
         ['dbs', () => name.includes('dbs')],
-        ['deutsche', () => name.includes('deutsche')]
+        ['deutsche', () => name.includes('deutsche') || name.includes('deut')]
     ];
 
     for (const [key, matcher] of aliases) {
         if (matcher() && BANK_LOGO_URL_MAP[key]) {
             const info = BANK_LOGO_URL_MAP[key];
-            const finalLogoUrl = customLogoUrl || info.logoUrl || svgToDataUrl(info.svg);
+            const officialSlug = OFFICIAL_BANK_LOGO_SLUGS[key];
+            const officialUrl = officialSlug
+                ? `https://cdn.jsdelivr.net/gh/praveenpuglia/indian-banks/assets/logos/${officialSlug}/symbol.svg`
+                : '';
+            const finalLogoUrl = customLogoUrl || info.logoUrl || officialUrl || svgToDataUrl(info.svg);
             return {
                 bankName: raw || info.name,
                 shortCode: info.shortCode,
@@ -1423,6 +1479,18 @@ function getBankBrandInfo(rawBankName, customLogoUrl) {
                 logoSvg: info.svg
             };
         }
+    }
+
+    if (name.includes('jana') || name.includes('jsfb')) {
+        const janaSvg = generateCustomBankLogo('Jana Small Finance Bank', 'JSF', 0);
+        return {
+            bankName: raw || 'Jana Small Finance Bank',
+            shortCode: 'JSFBNK',
+            color: '#0F3D7A',
+            bgColor: '#ffffff',
+            logoUrl: customLogoUrl || 'https://cdn.jsdelivr.net/gh/praveenpuglia/indian-banks/assets/logos/jsfb/symbol.svg',
+            logoSvg: janaSvg
+        };
     }
 
     const cleanName = raw || 'Bank Account';
@@ -2066,7 +2134,7 @@ function showPaymentNotification(transaction) {
             <div class="tc-bank-sender-row">
                 <div class="tc-bank-logo-badge-wrap">
                     <div class="tc-bank-logo-wrap">
-                        <img src="${brand.logoUrl}" alt="${brand.bankName} logo" class="tc-bank-logo-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                        <img src="${brand.logoUrl}" alt="${brand.bankName} logo" class="tc-bank-logo-img" referrerpolicy="no-referrer" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
                         <div class="tc-bank-logo-svg-fallback" style="display:none;">${brand.logoSvg}</div>
                     </div>
                     <span class="tc-bank-verified-corner" title="Verified Sender">
@@ -2315,59 +2383,19 @@ function setupCopyButton(button, upiId, messageElement) {
     });
 }
 
-const BONUS_EXPIRY_DATE = new Date(2026, 8, 30, 23, 59, 0);
+const WELCOME_BONUS_AMOUNT = 1599;
 let bonusCountdownTimer = null;
+let bonusStatusModalTimeout = null;
 
 function isBonusExpired() {
-    return Date.now() >= BONUS_EXPIRY_DATE.getTime();
+    return false;
 }
 
 function initializeBonusCountdown() {
-    const expiryText = document.getElementById('bonusCountdownExpiry');
-    const hoursEl = document.getElementById('bonusHours');
-    const minutesEl = document.getElementById('bonusMinutes');
-    const secondsEl = document.getElementById('bonusSeconds');
-
-    if (!expiryText || !hoursEl || !minutesEl || !secondsEl) return;
-
-    const targetTime = BONUS_EXPIRY_DATE;
-
-    function updateCountdown() {
-        const remainingMs = targetTime.getTime() - Date.now();
-
-        if (remainingMs <= 0) {
-            expiryText.textContent = 'BONUS EXPIRED';
-            hoursEl.textContent = '00';
-            minutesEl.textContent = '00';
-            secondsEl.textContent = '00';
-            clearInterval(bonusCountdownTimer);
-            bonusCountdownTimer = null;
-            return;
-        }
-
-        const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));
-        const hours = Math.floor(totalSeconds / 3600);
-        const minutes = Math.floor((totalSeconds % 3600) / 60);
-        const seconds = totalSeconds % 60;
-
-        expiryText.textContent = 'Bonus will expire on: 30-09-2026 11:59 PM';
-        hoursEl.textContent = String(hours).padStart(2, '0');
-        minutesEl.textContent = String(minutes).padStart(2, '0');
-        secondsEl.textContent = String(seconds).padStart(2, '0');
+    if (bonusCountdownTimer) {
+        clearInterval(bonusCountdownTimer);
+        bonusCountdownTimer = null;
     }
-
-    clearInterval(bonusCountdownTimer);
-
-    if (isBonusExpired()) {
-        expiryText.textContent = 'BONUS EXPIRED';
-        hoursEl.textContent = '00';
-        minutesEl.textContent = '00';
-        secondsEl.textContent = '00';
-        return;
-    }
-
-    updateCountdown();
-    bonusCountdownTimer = setInterval(updateCountdown, 1000);
 }
 
 const workflowSectionIds = [
@@ -2382,7 +2410,8 @@ const workflowSectionIds = [
     'withdrawCommissionSection',
     'paymentReceiptSection',
     'bonusPageSection',
-    'bonusWithdrawSection'
+    'bonusWithdrawSection',
+    'bonusReceiptSection'
 ];
 const workflowHistory = [];
 let bonusPopupTimer = null;
@@ -2459,7 +2488,16 @@ function getBonusStorageKey(key, username) {
 }
 
 function isBonusClaimed(username) {
-    return localStorage.getItem(getBonusStorageKey('bonusClaimed', username)) === '1';
+    if (localStorage.getItem(getBonusStorageKey('bonusClaimed1599', username)) === '1') {
+        return true;
+    }
+    const withdrawals = StorageManager.getWithdrawals();
+    return withdrawals.some(w =>
+        w &&
+        w.username === username &&
+        Number(w.amount) === WELCOME_BONUS_AMOUNT &&
+        String(w.type || '').toLowerCase().includes('bonus')
+    );
 }
 
 function setBonusState(username, key, value) {
@@ -2495,7 +2533,15 @@ function showWorkflowSection(sectionId, pushHistory = true) {
     if (welcomeRow) welcomeRow.style.display = isMain ? '' : 'none';
     if (statsSection) statsSection.style.display = isMain ? '' : 'none';
     if (bottomActions) bottomActions.style.display = isMain ? '' : 'none';
-    if (panelApprovalBanner) panelApprovalBanner.style.display = isMain ? '' : 'none';
+    if (panelApprovalBanner) {
+        const hideBannerOnSection =
+            sectionId === 'runningAccountSection' ||
+            sectionId === 'paymentReceiptSection' ||
+            sectionId === 'bonusPageSection' ||
+            sectionId === 'bonusWithdrawSection' ||
+            sectionId === 'bonusReceiptSection';
+        panelApprovalBanner.style.display = hideBannerOnSection ? 'none' : '';
+    }
 
     const transactionHistorySection = document.getElementById('transactionHistorySection');
     if (transactionHistorySection) {
@@ -2515,7 +2561,7 @@ function showWorkflowSection(sectionId, pushHistory = true) {
     const runningSections = new Set([
         'runningAccountSection', 'withdrawCommissionSection', 'paymentReceiptSection'
     ]);
-    const bonusSections = new Set(['bonusPageSection', 'bonusWithdrawSection']);
+    const bonusSections = new Set(['bonusPageSection', 'bonusWithdrawSection', 'bonusReceiptSection']);
     const bottomTarget = isMain
         ? 'mainDashboard'
         : setupSections.has(sectionId)
@@ -2560,15 +2606,19 @@ function goBackOneStep() {
 }
 
 function updateBonusBadgeUI(username = StorageManager.getLoggedInUser()) {
+    if (typeof window.__refreshHeaderWelcomeBonus === 'function') {
+        window.__refreshHeaderWelcomeBonus(username);
+        return;
+    }
     const bonusBadge = document.getElementById('bonusBadge');
     const bonusBox = document.getElementById('bonusBox');
     const bonusOpened = localStorage.getItem(getBonusStorageKey('bonusOpened', username)) === '1';
 
     if (bonusBox) bonusBox.style.display = 'inline-flex';
-    if (bonusBadge) bonusBadge.style.display = bonusOpened ? 'none' : 'inline-flex';
+    if (bonusBadge) bonusBadge.style.display = (bonusOpened || isBonusClaimed(username)) ? 'none' : 'inline-flex';
 }
 
-function showBonusInlineMessage(message, type = 'error', timeoutMs = 2800) {
+function showBonusInlineMessage(message, type = 'error', timeoutMs = 3200) {
     const messageContainer = document.getElementById('bonusMessageContainer');
     if (!messageContainer) return;
 
@@ -2584,8 +2634,56 @@ function showBonusInlineMessage(message, type = 'error', timeoutMs = 2800) {
     }, timeoutMs);
 }
 
+function showBonusStatusPopup({ title = 'Action Required', message = '', icon = '⚠️', durationMs = 5500 } = {}) {
+    const modal = document.getElementById('bonusStatusPopupModal');
+    const titleEl = document.getElementById('bonusPopupTitle');
+    const msgEl = document.getElementById('bonusPopupMessage');
+    const iconEl = document.getElementById('bonusPopupIcon');
+    const fillEl = document.getElementById('bonusPopupProgressFill');
+    const actionBtn = document.getElementById('bonusPopupActionBtn');
+
+    if (!modal || !msgEl) {
+        showAppToast(message, 'warning');
+        return;
+    }
+
+    if (bonusStatusModalTimeout) {
+        clearTimeout(bonusStatusModalTimeout);
+        bonusStatusModalTimeout = null;
+    }
+
+    if (titleEl) titleEl.textContent = title;
+    msgEl.textContent = message;
+    if (iconEl) iconEl.textContent = icon;
+
+    if (fillEl) {
+        fillEl.style.animation = 'none';
+        void fillEl.offsetWidth;
+        fillEl.style.animation = `bonusPopupShrink ${durationMs}ms linear forwards`;
+    }
+
+    const closeModal = () => {
+        if (bonusStatusModalTimeout) {
+            clearTimeout(bonusStatusModalTimeout);
+            bonusStatusModalTimeout = null;
+        }
+        modal.style.display = 'none';
+    };
+
+    modal.style.display = 'flex';
+    if (actionBtn) {
+        actionBtn.onclick = closeModal;
+    }
+    modal.onclick = (evt) => {
+        if (evt.target === modal) closeModal();
+    };
+
+    bonusStatusModalTimeout = setTimeout(closeModal, durationMs);
+}
+
 function renderBonusPageUI(username = StorageManager.getLoggedInUser()) {
     const bonusSection = document.getElementById('bonusPageSection');
+    const pageTitle = bonusSection ? bonusSection.querySelector('.bonus-page-title') : null;
     const title = bonusSection ? bonusSection.querySelector('h3') : null;
     const subtitle = bonusSection ? bonusSection.querySelector('.bonus-page-subtitle') : null;
     const amount = bonusSection ? bonusSection.querySelector('.bonus-amount') : null;
@@ -2594,96 +2692,45 @@ function renderBonusPageUI(username = StorageManager.getLoggedInUser()) {
 
     if (!bonusSection) return;
 
+    if (pageTitle) pageTitle.textContent = 'WELCOME SPECIAL BONUS';
+
     if (isBonusClaimed(username)) {
-        if (title) title.textContent = '✅ CONGRATULATIONS';
-        if (subtitle) subtitle.textContent = 'YOU HAVE SUCCESSFULLY CLAIMED YOUR BONUS.';
+        if (title) title.textContent = '✅ BONUS CLAIMED';
+        if (subtitle) subtitle.textContent = 'YOUR ₹1,599 WELCOME SPECIAL BONUS HAS BEEN CLAIMED & CREDITED.';
         if (amount) {
-            amount.textContent = '';
-            amount.style.display = 'none';
+            amount.textContent = '₹1,599';
+            amount.style.display = 'block';
         }
         if (claimButton) {
-            claimButton.textContent = 'BONUS CLAIMED';
+            claimButton.textContent = '✓ CLAIMED (₹1,599)';
             claimButton.disabled = true;
             claimButton.classList.remove('btn-primary');
             claimButton.classList.add('btn-secondary');
         }
         if (messageContainer) {
-            messageContainer.style.display = 'none';
-            messageContainer.textContent = '';
-            messageContainer.className = 'bonus-inline-message';
+            messageContainer.style.display = 'block';
+            messageContainer.textContent = '✓ BONUS CLAIMED • ₹1,599 WELCOME SPECIAL BONUS WITHDRAWN SUCCESSFULLY';
+            messageContainer.className = 'bonus-inline-message success';
         }
         return;
     }
 
     if (title) title.textContent = 'CONGRATULATIONS';
-    if (subtitle) subtitle.textContent = 'SPECIAL BONUS CREDITED';
+    if (subtitle) subtitle.textContent = 'WELCOME SPECIAL BONUS CREDITED';
     if (amount) {
-        amount.textContent = '₹799';
+        amount.textContent = '₹1,599';
         amount.style.display = 'block';
     }
     if (claimButton) {
-        if (isBonusExpired()) {
-            claimButton.textContent = 'BONUS EXPIRED';
-            claimButton.disabled = true;
-            claimButton.classList.remove('btn-primary');
-            claimButton.classList.add('btn-secondary');
-        } else {
-            claimButton.textContent = 'CLAIM / WITHDRAW ₹799';
-            claimButton.disabled = false;
-            claimButton.classList.remove('btn-secondary');
-            claimButton.classList.add('btn-primary');
-        }
+        claimButton.textContent = '🎁 CLAIM ₹1,599 »';
+        claimButton.disabled = false;
+        claimButton.classList.remove('btn-secondary');
+        claimButton.classList.add('btn-primary');
     }
     if (messageContainer) {
         messageContainer.style.display = 'none';
         messageContainer.textContent = '';
         messageContainer.className = 'bonus-inline-message';
-    }
-
-    initializeBonusCountdown();
-}
-
-function showBonusReceipt(amount, ifsc, bank, holder, username = StorageManager.getLoggedInUser()) {
-    const form = document.getElementById('bonusWithdrawForm');
-    const formParent = form ? form.parentElement : null;
-    const existing = formParent ? formParent.querySelector('.final-receipt') : null;
-    if (existing) existing.remove();
-
-    const receiptDiv = document.createElement('div');
-    receiptDiv.className = 'final-receipt';
-    const timestamp = new Date().toLocaleString();
-    receiptDiv.innerHTML = `
-        <div class="compact-bonus-receipt">
-            <div class="withdrawal-message" style="background:rgba(16,185,129,0.1);border-color:var(--success-color);color:var(--success-color);text-align:center;margin:0 0 10px;padding:8px 10px;">
-                <strong style="font-size:0.88rem;">✔ WITHDRAW REQUEST RECEIVED</strong>
-            </div>
-
-            <div class="receipt-panel" style="margin:0;padding:10px 12px;">
-                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Withdrawal Amount:</span><strong>₹${Number(amount).toLocaleString('en-IN')}</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Bank:</span><strong>${bank}</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>IFSC:</span><strong class="mono-font">${ifsc}</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Credited To:</span><strong>${holder}</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Mode:</span><strong>IMPS transfer</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Status:</span><small style="color:var(--success-color);font-weight:700;">Successfully Credited</small></div>
-                <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:0.8rem;"><span>Timestamp:</span><small>${timestamp}</small></div>
-            </div>
-
-            <button type="button" class="btn btn-primary app-gradient-cta" id="closeBonusReceiptBtn" style="width:100%;margin-top:10px;">Close & Return to Dashboard</button>
-        </div>
-    `;
-
-    if (formParent) {
-        formParent.innerHTML = '';
-        formParent.appendChild(receiptDiv);
-    }
-
-    const closeBtn = document.getElementById('closeBonusReceiptBtn');
-    if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
-            showWorkflowSection('mainDashboard', false);
-            if (formParent) formParent.innerHTML = '';
-            renderBonusPageUI(username);
-        });
     }
 }
 
@@ -3309,8 +3356,17 @@ if (document.getElementById('welcomeMessage')) {
     }
 
     let lastKnownApprovalStatus = StorageManager.getActivationStatus(loggedInUser);
+    let lastKnownAdminMessage = String(StorageManager.getUser(loggedInUser)?.rejectionMessage || '').trim();
     let latestUserUtrs = StorageManager.getWithdrawals().filter(w => w.username === loggedInUser);
     let activeReceiptUtrId = null;
+    const autoOpenedUpgradeIds = new Set();
+
+    const escapeHtmlSafe = (val) => String(val ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 
     function mergeUserUtrs(remoteList = []) {
         const localList = StorageManager.getWithdrawals().filter(w => w.username === loggedInUser);
@@ -3327,10 +3383,22 @@ if (document.getElementById('welcomeMessage')) {
         return merged;
     }
 
-    function isUpgrade199Record(u) {
+    function isBonusWithdrawRecord(u) {
         if (!u) return false;
         const typeStr = String(u.type || '').toLowerCase();
+        return typeStr.includes('bonus') || Number(u.amount) === WELCOME_BONUS_AMOUNT;
+    }
+
+    function isUpgrade199Record(u) {
+        if (!u || isBonusWithdrawRecord(u)) return false;
+        const typeStr = String(u.type || '').toLowerCase();
         return Number(u.amount) === 199 || typeStr.includes('199') || typeStr.includes('upgrade');
+    }
+
+    function isActivation399Record(u) {
+        if (!u || isUpgrade199Record(u) || isBonusWithdrawRecord(u)) return false;
+        const typeStr = String(u.type || '').toLowerCase();
+        return Number(u.amount) === 399 || typeStr.includes('399') || typeStr.includes('activation');
     }
 
     function isUtrApproved(u) {
@@ -3339,17 +3407,41 @@ if (document.getElementById('welcomeMessage')) {
         return s.includes('approved') || s.includes('receipt') || s.includes('activated');
     }
 
+    function getCombinedUserUtrs(username = loggedInUser, utrs = latestUserUtrs) {
+        const localAll = StorageManager.getWithdrawals().filter(w => w && w.username === username);
+        const byId = new Map();
+        [...(utrs || []), ...localAll].forEach(item => {
+            if (item && item.id && !byId.has(item.id)) {
+                byId.set(item.id, item);
+            }
+        });
+        return Array.from(byId.values()).sort(
+            (a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+        );
+    }
+
     function getLatestApprovedUpgrade199Utr(utrs = latestUserUtrs) {
         for (const u of (utrs || [])) {
-            if (!u) continue;
+            if (!u || isBonusWithdrawRecord(u)) continue;
             if (isUpgrade199Record(u)) {
                 if (isUtrApproved(u)) return u;
-            } else if (String(u.type || '').toLowerCase().includes('activation') || Number(u.amount) === 399) {
+            } else if (isActivation399Record(u)) {
                 // Newer ₹399 activation cycle supersedes older ₹199 receipts
                 return null;
             }
         }
         return null;
+    }
+
+    function hasApproved199Withdrawal(username = loggedInUser, utrs = latestUserUtrs) {
+        return getLatestApprovedUpgrade199Utr(getCombinedUserUtrs(username, utrs)) !== null;
+    }
+
+    function isActivation399Approved(username = loggedInUser, utrs = latestUserUtrs) {
+        if (StorageManager.isAccountActivated(username)) return true;
+        if (hasApproved199Withdrawal(username, utrs)) return true;
+        const combined = getCombinedUserUtrs(username, utrs);
+        return combined.some(u => isActivation399Record(u) && isUtrApproved(u));
     }
 
     function openPayChargesFlow(preferUpgrade = false) {
@@ -3644,6 +3736,159 @@ if (document.getElementById('welcomeMessage')) {
         }
     }
 
+    function showBonusPaymentReceipt(details) {
+        const card = document.getElementById('bonusReceiptCard');
+        if (!card || !details) return;
+
+        const amountVal = Number(details.amount || WELCOME_BONUS_AMOUNT);
+        const holderName = escapeHtmlSafe(details.accountHolder || `@${loggedInUser}`);
+        const bankName = escapeHtmlSafe(details.bank || 'Bank Account');
+        const ifscCode = escapeHtmlSafe(String(details.ifsc || '').toUpperCase());
+        const accountNumber = escapeHtmlSafe(details.accNumber || '');
+        const contactNumber = escapeHtmlSafe(details.contact || '');
+        const txnId = escapeHtmlSafe(details.txnId || generateRandomTransactionId());
+        const npciRef = escapeHtmlSafe(details.npciRef || generateRandomNpciRef());
+        const authChecksum = escapeHtmlSafe(details.authChecksum || generateReceiptAuthCode());
+        const receiptId = escapeHtmlSafe(details.receiptId || `BN-${String(txnId).slice(-6)}`);
+        const issuedAt = escapeHtmlSafe(details.timestamp || new Date().toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true
+        }));
+        const qrSvg = generateReceiptQrSvg(`${receiptId}|${txnId}|BONUS|${amountVal}|${details.accountHolder || ''}|${details.accNumber || ''}|${details.ifsc || ''}`);
+
+        card.innerHTML = `
+            <div class="receipt-seal-header">
+                <div class="receipt-verified-badge">✓ BONUS CLAIMED • OFFICIAL BONUS RECEIPT</div>
+                <h3 class="receipt-main-title">Welcome Special Bonus Receipt</h3>
+                <p class="receipt-sub-id"><span class="mono-font">${receiptId}</span> • <span class="mono-font">${txnId}</span></p>
+            </div>
+
+            <div class="receipt-payout-summary">
+                <div class="receipt-payout-box">
+                    <span class="receipt-payout-label">Bonus Payout</span>
+                    <strong class="receipt-payout-val">₹${amountVal.toLocaleString('en-IN')}</strong>
+                    <span class="receipt-payout-status">● CLAIMED &amp; CREDITED</span>
+                </div>
+                <div class="receipt-fee-box">
+                    <span class="receipt-payout-label">Clearing Ref (NPCI)</span>
+                    <strong class="receipt-fee-val mono-font">${npciRef}</strong>
+                    <span class="receipt-fee-status">✓ Verified</span>
+                </div>
+            </div>
+
+            <div class="receipt-kv-list">
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">Plan Title</span>
+                    <strong class="receipt-kv-val" style="color:#fbbf24;">WELCOME SPECIAL BONUS</strong>
+                </div>
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">Transaction ID</span>
+                    <strong class="receipt-kv-val mono-font" style="color:#38bdf8;">${txnId}</strong>
+                </div>
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">Bonus Amount</span>
+                    <strong class="receipt-kv-val" style="color:#4ade80;">₹${amountVal.toLocaleString('en-IN')}</strong>
+                </div>
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">Bank Account Holder</span>
+                    <strong class="receipt-kv-val">${holderName}</strong>
+                </div>
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">Bank Name</span>
+                    <strong class="receipt-kv-val">${bankName}</strong>
+                </div>
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">Account Number</span>
+                    <strong class="receipt-kv-val mono-font">${accountNumber}</strong>
+                </div>
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">IFSC Code</span>
+                    <strong class="receipt-kv-val mono-font">${ifscCode}</strong>
+                </div>
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">Contact Number</span>
+                    <strong class="receipt-kv-val mono-font">${contactNumber}</strong>
+                </div>
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">Transfer Mode</span>
+                    <strong class="receipt-kv-val">IMPS Instant</strong>
+                </div>
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">Claim Status</span>
+                    <strong class="receipt-kv-val" style="color:#4ade80;">✓ CLAIMED (Successfully Credited)</strong>
+                </div>
+                <div class="receipt-kv-row">
+                    <span class="receipt-kv-key">Timestamp</span>
+                    <strong class="receipt-kv-val">${issuedAt}</strong>
+                </div>
+            </div>
+
+            <div class="receipt-qr-scanner-box">
+                <div class="receipt-qr-frame">${qrSvg}</div>
+                <div class="receipt-qr-meta">
+                    <span class="receipt-qr-kicker">SCANNER VERIFICATION CODE</span>
+                    <strong>Welcome Bonus IMPS Receipt</strong>
+                    <small>Checksum: <span class="mono-font">${authChecksum}</span></small>
+                    <div class="receipt-qr-status">✓ Tamper-Protected Clearing Stamp</div>
+                </div>
+            </div>
+
+            <div class="receipt-actions-row">
+                <button type="button" class="btn btn-secondary" id="printBonusReceiptBtn">Print / Save PDF</button>
+                <button type="button" class="btn btn-secondary" id="copyBonusReceiptDetailsBtn">Copy Receipt</button>
+                <button type="button" class="btn btn-primary app-gradient-cta" id="finalizeBonusReceiptBtn">Done &amp; View Claimed Status</button>
+            </div>
+        `;
+
+        showWorkflowSection('bonusReceiptSection');
+
+        const printBtn = document.getElementById('printBonusReceiptBtn');
+        if (printBtn) {
+            printBtn.addEventListener('click', () => window.print());
+        }
+
+        const copyBtn = document.getElementById('copyBonusReceiptDetailsBtn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', async () => {
+                const summary = [
+                    `ACCOUNT FUNDS - WELCOME SPECIAL BONUS RECEIPT`,
+                    `Receipt ID: ${details.receiptId || receiptId}`,
+                    `Transaction ID: ${details.txnId || txnId}`,
+                    `NPCI Ref: ${details.npciRef || npciRef}`,
+                    `Auth Checksum: ${details.authChecksum || authChecksum}`,
+                    `Bonus Amount: ₹${amountVal.toLocaleString('en-IN')}`,
+                    `Account Holder: ${details.accountHolder || ''}`,
+                    `Bank Name: ${details.bank || ''}`,
+                    `Account Number: ${details.accNumber || ''}`,
+                    `IFSC Code: ${String(details.ifsc || '').toUpperCase()}`,
+                    `Contact Number: ${details.contact || ''}`,
+                    `Claim Status: CLAIMED (Successfully Credited)`,
+                    `Timestamp: ${details.timestamp || issuedAt}`
+                ].join('\n');
+                try {
+                    await navigator.clipboard.writeText(summary);
+                    showAppToast('✓ Bonus Payment Receipt copied to clipboard!', 'success');
+                } catch {
+                    showAppToast('Unable to copy automatically. Use Print / Save PDF.', 'warning');
+                }
+            });
+        }
+
+        const doneBtn = document.getElementById('finalizeBonusReceiptBtn');
+        if (doneBtn) {
+            doneBtn.addEventListener('click', () => {
+                renderBonusPageUI(loggedInUser);
+                updateBonusBadgeUI(loggedInUser);
+                showWorkflowSection('bonusPageSection', false);
+            });
+        }
+    }
+
     function updateReceiptShortcutButton(utrs = latestUserUtrs) {
         const viewBtn = document.getElementById('viewLatestReceiptBtn');
         if (!viewBtn) return;
@@ -3662,35 +3907,47 @@ if (document.getElementById('welcomeMessage')) {
                         : (userObj.activationStatus || 'not_submitted')))
             : StorageManager.getActivationStatus(loggedInUser);
 
-        const latestUtr = (userUtrs && userUtrs[0]) || null;
+        const latestUtr = (userUtrs || []).find(u => u && !isBonusWithdrawRecord(u)) || null;
         const isUpgrade199 = isUpgrade199Record(latestUtr);
         const accDetails = (userObj && userObj.accountDetails) || StorageManager.getAccountDetails(loggedInUser) || {};
         const utrDisplay = latestUtr?.utr || latestUtr?.tokenNumber || 'Syncing...';
+        const adminReply = String(userObj?.rejectionMessage ?? StorageManager.getUser(loggedInUser)?.rejectionMessage ?? '').trim();
+        const adminReplyBlock = adminReply
+            ? `<div class="admin-reply-callout" role="note"><span class="admin-reply-callout-head">💬 Admin Message</span><div class="admin-reply-callout-body">${escapeHtmlSafe(adminReply)}</div></div>`
+            : '';
 
         const bannerEl = document.getElementById('panelApprovalBanner');
+        const currentSecId = getCurrentWorkflowSectionId();
+        const hideBannerOnSection =
+            currentSecId === 'runningAccountSection' ||
+            currentSecId === 'paymentReceiptSection' ||
+            currentSecId === 'bonusPageSection' ||
+            currentSecId === 'bonusWithdrawSection' ||
+            currentSecId === 'bonusReceiptSection';
+
         if (bannerEl) {
             if (status === 'pending_approval') {
-                bannerEl.className = 'panel-approval-banner pending';
-                bannerEl.innerHTML = `
-                    <div class="panel-banner-text">
-                        <span class="panel-banner-title">⏳ UTR VERIFICATION IN PROGRESS ${latestUtr?.utr ? `• ${latestUtr.utr}` : ''}</span>
-                        <span class="panel-banner-sub">${isUpgrade199 ? 'Your ₹199 Upgrade UTR is being verified by Admin. Your Payment Receipt will appear automatically once approved.' : 'Your ₹399 Activation UTR is being verified by Admin. Live transactions will start automatically once approved.'}</span>
-                    </div>
-                    <button type="button" class="btn btn-secondary" id="bannerViewStatusBtn">Track Verification →</button>
-                `;
-                const btn = document.getElementById('bannerViewStatusBtn');
-                if (btn) {
-                    btn.addEventListener('click', () => {
-                        showWorkflowSection('runningAccountSection');
-                        startRunningAccount(loggedInUser);
-                    });
+                if (adminReply) {
+                    bannerEl.className = 'panel-approval-banner reply-only';
+                    bannerEl.style.display = hideBannerOnSection ? 'none' : '';
+                    bannerEl.innerHTML = `
+                        <div class="panel-banner-text">
+                            <span class="panel-banner-title">💬 UPDATE FROM ADMIN SUPPORT</span>
+                            ${adminReplyBlock}
+                        </div>
+                    `;
+                } else {
+                    bannerEl.className = 'panel-approval-banner hidden';
+                    bannerEl.innerHTML = '';
                 }
             } else if (status === 'rejected') {
                 bannerEl.className = 'panel-approval-banner rejected';
+                bannerEl.style.display = hideBannerOnSection ? 'none' : '';
                 bannerEl.innerHTML = `
                     <div class="panel-banner-text">
                         <span class="panel-banner-title">❌ PAYMENT UTR REJECTED BY ADMIN</span>
-                        <span class="panel-banner-sub">${latestUtr?.utr ? `UTR ${latestUtr.utr} could not be matched. ` : ''}Kindly pay the charge via UPI and resubmit a valid 12-digit UTR.</span>
+                        <span class="panel-banner-sub">${latestUtr?.utr ? `UTR ${escapeHtmlSafe(latestUtr.utr)} could not be matched. ` : ''}Kindly pay the charge via UPI and resubmit a valid 12-digit UTR.</span>
+                        ${adminReplyBlock}
                     </div>
                     <button type="button" class="btn btn-danger" id="bannerPayChargesBtn" style="width:auto;">Pay Charges &amp; Resubmit →</button>
                 `;
@@ -3701,10 +3958,12 @@ if (document.getElementById('welcomeMessage')) {
             } else if (status === 'approved') {
                 const approvedUpgrade = getLatestApprovedUpgrade199Utr(userUtrs);
                 bannerEl.className = 'panel-approval-banner approved';
+                bannerEl.style.display = hideBannerOnSection ? 'none' : '';
                 bannerEl.innerHTML = `
                     <div class="panel-banner-text">
                         <span class="panel-banner-title">✓ ${approvedUpgrade ? 'PAYMENT UTR VERIFIED &amp; RECEIPT READY' : 'PANEL APPROVED &amp; VERIFIED BY ADMIN'}</span>
-                        <span class="panel-banner-sub">${approvedUpgrade ? `UTR ${approvedUpgrade.utr || ''} verified. Open your official payment receipt or continue live credits.` : 'Your account is active. Live credit transactions are enabled.'}</span>
+                        <span class="panel-banner-sub">${approvedUpgrade ? `UTR ${escapeHtmlSafe(approvedUpgrade.utr || '')} verified. Open your official payment receipt or continue live credits.` : 'Your account is active. Live credit transactions are enabled.'}</span>
+                        ${adminReplyBlock}
                     </div>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;">
                         ${approvedUpgrade ? `<button type="button" class="btn btn-secondary" id="bannerViewReceiptBtn" style="width:auto;">📄 Payment Receipt</button>` : ''}
@@ -3722,6 +3981,15 @@ if (document.getElementById('welcomeMessage')) {
                         startRunningAccount(loggedInUser);
                     });
                 }
+            } else if (adminReply) {
+                bannerEl.className = 'panel-approval-banner reply-only';
+                bannerEl.style.display = hideBannerOnSection ? 'none' : '';
+                bannerEl.innerHTML = `
+                    <div class="panel-banner-text">
+                        <span class="panel-banner-title">💬 UPDATE FROM ADMIN SUPPORT</span>
+                        ${adminReplyBlock}
+                    </div>
+                `;
             } else {
                 bannerEl.className = 'panel-approval-banner hidden';
                 bannerEl.innerHTML = '';
@@ -3756,6 +4024,7 @@ if (document.getElementById('welcomeMessage')) {
                         <p class="utr-tracker-sub">${isUpgrade199
                             ? 'Admin is verifying your ₹199 UPI transaction. Your official Payment &amp; Commission Receipt will generate automatically right here.'
                             : 'Admin is verifying your ₹399 UPI transaction. Live banking credits will start automatically as soon as Admin approves.'}</p>
+                        ${adminReplyBlock}
                     </div>
 
                     <div class="utr-pipeline">
@@ -3779,13 +4048,13 @@ if (document.getElementById('welcomeMessage')) {
                         <div class="utr-ticket-item utr-ticket-full">
                             <span class="utr-ticket-lbl">Submitted 12-Digit UTR / Ref</span>
                             <div class="utr-ticket-utr-row">
-                                <strong class="utr-ticket-val mono-font" style="color:#fbbf24;font-size:1.05rem;">${utrDisplay}</strong>
+                                <strong class="utr-ticket-val mono-font" style="color:#fbbf24;font-size:1.05rem;">${escapeHtmlSafe(utrDisplay)}</strong>
                                 ${latestUtr?.utr ? `<button type="button" class="btn-copy-utr-mini" id="gateCopyUtrBtn">Copy UTR</button>` : ''}
                             </div>
                         </div>
                         <div class="utr-ticket-item">
                             <span class="utr-ticket-lbl">Payment Type</span>
-                            <strong class="utr-ticket-val">${latestUtr?.type || 'Activation Payment (₹399)'}</strong>
+                            <strong class="utr-ticket-val">${escapeHtmlSafe(latestUtr?.type || 'Activation Payment (₹399)')}</strong>
                         </div>
                         <div class="utr-ticket-item">
                             <span class="utr-ticket-lbl">Amount Paid</span>
@@ -3793,7 +4062,7 @@ if (document.getElementById('welcomeMessage')) {
                         </div>
                         <div class="utr-ticket-item">
                             <span class="utr-ticket-lbl">Destination Bank &amp; IFSC</span>
-                            <strong class="utr-ticket-val">${latestUtr?.bank || accDetails.bankName || 'Linked Bank'} (${latestUtr?.ifsc || accDetails.ifscCode || 'UPI'})</strong>
+                            <strong class="utr-ticket-val">${escapeHtmlSafe(latestUtr?.bank || accDetails.bankName || 'Linked Bank')} (${escapeHtmlSafe(latestUtr?.ifsc || accDetails.ifscCode || 'UPI')})</strong>
                         </div>
                         <div class="utr-ticket-item">
                             <span class="utr-ticket-lbl">Account &amp; Submitted Time</span>
@@ -3802,7 +4071,7 @@ if (document.getElementById('welcomeMessage')) {
                         ${(latestUtr?.accountHolder || accDetails.accountHolder) ? `
                         <div class="utr-ticket-item utr-ticket-full">
                             <span class="utr-ticket-lbl">Account Holder Name</span>
-                            <strong class="utr-ticket-val">${latestUtr?.accountHolder || accDetails.accountHolder}</strong>
+                            <strong class="utr-ticket-val">${escapeHtmlSafe(latestUtr?.accountHolder || accDetails.accountHolder)}</strong>
                         </div>` : ''}
                     </div>
 
@@ -3851,8 +4120,9 @@ if (document.getElementById('welcomeMessage')) {
                     <div class="panel-gate-icon">❌</div>
                     <div class="panel-gate-title">PAYMENT UTR VERIFICATION REJECTED</div>
                     <p class="panel-gate-desc"><strong>KINDLY PAY THE CHARGES AND RESUBMIT VALID UTR.</strong><br>
-                    ${latestUtr?.utr ? `Submitted UTR <span class="mono-font" style="color:#fca5a5;">${latestUtr.utr}</span> (₹${Number(latestUtr.amount || 399).toLocaleString('en-IN')}) was rejected by Admin.` : 'Your previous UTR could not be verified by Admin.'} Please complete the UPI payment and enter a valid 12-digit UTR.</p>
-                    <button type="button" class="btn btn-primary" id="gatePayChargesBtn" style="max-width:320px;margin:0 auto;">Pay Charges &amp; Resubmit UTR →</button>
+                    ${latestUtr?.utr ? `Submitted UTR <span class="mono-font" style="color:#fca5a5;">${escapeHtmlSafe(latestUtr.utr)}</span> (₹${Number(latestUtr.amount || 399).toLocaleString('en-IN')}) was rejected by Admin.` : 'Your previous UTR could not be verified by Admin.'} Please complete the UPI payment and enter a valid 12-digit UTR.</p>
+                    ${adminReplyBlock}
+                    <button type="button" class="btn btn-primary" id="gatePayChargesBtn" style="max-width:320px;margin:10px auto 0;">Pay Charges &amp; Resubmit UTR →</button>
                     <div class="gate-support-team-card" style="margin-top:14px;">
                         <div class="gate-support-meta">
                             <span class="gate-support-kicker">VERIFICATION SUPPORT TEAM</span>
@@ -3872,8 +4142,13 @@ if (document.getElementById('welcomeMessage')) {
             if (runningMain) runningMain.style.display = 'none';
         } else if (status === 'approved') {
             if (gateBox) {
-                gateBox.className = 'panel-gate-alert hidden';
-                gateBox.innerHTML = '';
+                if (adminReplyBlock) {
+                    gateBox.className = 'panel-gate-alert approved-note';
+                    gateBox.innerHTML = adminReplyBlock;
+                } else {
+                    gateBox.className = 'panel-gate-alert hidden';
+                    gateBox.innerHTML = '';
+                }
             }
             if (runningMain) runningMain.style.display = 'flex';
         } else {
@@ -3887,7 +4162,8 @@ if (document.getElementById('welcomeMessage')) {
                     <div class="panel-gate-icon">🔒</div>
                     <div class="panel-gate-title">ACTIVATION PAYMENT REQUIRED</div>
                     <p class="panel-gate-desc">Complete Account Details, ATM Setup, and ₹399 Activation Payment UTR, then wait for Admin verification to start transactions.</p>
-                    <button type="button" class="btn btn-primary" id="gateStartActivationBtn" style="max-width:280px;margin:0 auto;">Proceed to Payment →</button>
+                    ${adminReplyBlock}
+                    <button type="button" class="btn btn-primary" id="gateStartActivationBtn" style="max-width:280px;margin:10px auto 0;">Proceed to Payment →</button>
                 `;
                 const goBtn = document.getElementById('gateStartActivationBtn');
                 if (goBtn) {
@@ -3897,13 +4173,26 @@ if (document.getElementById('welcomeMessage')) {
             if (runningMain) runningMain.style.display = 'none';
         }
 
+        updateSettledPaymentTransferVisual(accDetails.bankName || 'Linked Bank');
         updateReceiptShortcutButton(userUtrs);
     }
 
     function checkAndShowAutoReceipt(userUtrs, userObj) {
         const approvedUpgrade = getLatestApprovedUpgrade199Utr(userUtrs);
         updateReceiptShortcutButton(userUtrs);
-        if (approvedUpgrade && localStorage.getItem(pKey(`receipt_dismissed_${approvedUpgrade.id}`)) !== '1') {
+        const curSec = getCurrentWorkflowSectionId();
+        const inBonusFlow =
+            curSec === 'bonusPageSection' ||
+            curSec === 'bonusWithdrawSection' ||
+            curSec === 'bonusReceiptSection';
+        if (inBonusFlow) return;
+
+        if (
+            approvedUpgrade &&
+            localStorage.getItem(pKey(`receipt_dismissed_${approvedUpgrade.id}`)) !== '1' &&
+            !autoOpenedUpgradeIds.has(approvedUpgrade.id)
+        ) {
+            autoOpenedUpgradeIds.add(approvedUpgrade.id);
             if (activeReceiptUtrId !== approvedUpgrade.id) {
                 showVerifiedPaymentReceipt(approvedUpgrade, userObj || StorageManager.getUser(loggedInUser));
                 showAppToast('✓ Admin verified ₹199 UTR! Payment Receipt generated.', 'success');
@@ -3939,7 +4228,7 @@ if (document.getElementById('welcomeMessage')) {
 
     function handleRealtimeApprovalTransition(source = 'sync') {
         let curUser = StorageManager.getUser(loggedInUser);
-        const latestUtr = (latestUserUtrs && latestUserUtrs[0]) || null;
+        const latestUtr = (latestUserUtrs || []).find(u => u && !isBonusWithdrawRecord(u)) || null;
 
         // Cross-check promotion: if latest ₹399 UTR is already approved while user doc hasn't caught up yet
         if (
@@ -3953,20 +4242,32 @@ if (document.getElementById('welcomeMessage')) {
             if (users[loggedInUser]) {
                 users[loggedInUser].activated = true;
                 users[loggedInUser].activationStatus = 'approved';
-                users[loggedInUser].rejectionMessage = '';
                 localStorage.setItem(pKey('users'), JSON.stringify(users));
                 curUser = users[loggedInUser];
             }
         }
 
         const nextStatus = StorageManager.getActivationStatus(loggedInUser);
+        const nextAdminMessage = String(curUser?.rejectionMessage || '').trim();
         if (nextStatus === 'approved' && curUser && curUser.accountDetails) {
             localStorage.removeItem(pKey(`autodebit_disabled_${loggedInUser}`));
+        }
+
+        if (nextAdminMessage && nextAdminMessage !== lastKnownAdminMessage) {
+            lastKnownAdminMessage = nextAdminMessage;
+            showAppToast(`💬 Admin Message: ${nextAdminMessage}`, nextStatus === 'rejected' ? 'error' : 'info');
+            try { playNotificationSound(`reply-${Date.now()}`); } catch {}
+        } else if (!nextAdminMessage) {
+            lastKnownAdminMessage = '';
         }
 
         renderApprovalGateUI(curUser, latestUserUtrs);
         renderTransactionHistory();
         updateTopStatsUI();
+        updateBonusBadgeUI(loggedInUser);
+        if (getCurrentWorkflowSectionId() === 'bonusPageSection') {
+            renderBonusPageUI(loggedInUser);
+        }
         checkAndShowAutoReceipt(latestUserUtrs, curUser);
 
         const approvedUpgrade = getLatestApprovedUpgrade199Utr(latestUserUtrs);
@@ -3978,11 +4279,31 @@ if (document.getElementById('welcomeMessage')) {
         if (nextStatus === 'approved') {
             const wasTransition = lastKnownApprovalStatus !== 'approved';
             lastKnownApprovalStatus = 'approved';
+
+            if (wasTransition) {
+                // Unlock any previous cycle limit / stop flags so approved transactions start cleanly
+                localStorage.removeItem(pKey(`account_limit_reached_${loggedInUser}`));
+                localStorage.removeItem(pKey(`autodebit_disabled_${loggedInUser}`));
+                window.__isAccountStoppedByUserOrLimit = false;
+
+                const totalCr = parseFloat(localStorage.getItem(pKey(`totalCredits_${loggedInUser}`)) || '0') || 0;
+                const totalDb = parseFloat(localStorage.getItem(pKey(`totalDebits_${loggedInUser}`)) || '0') || 0;
+                const balNow = Math.max(0, totalCr - totalDb);
+                const limitKey = pKey(`account_limit_${loggedInUser}`);
+                const curLim = parseFloat(localStorage.getItem(limitKey) || '0') || 0;
+                if (curLim > 0 && totalCr >= curLim && balNow <= 0) {
+                    const accType = (curUser?.accountDetails?.accountType || StorageManager.getAccountDetails(loggedInUser)?.accountType || 'Saving');
+                    const freshTierLimit = accType === 'Corporate' ? 145000 : accType === 'Current' ? 95000 : 55000;
+                    localStorage.setItem(limitKey, String(curLim + freshTierLimit));
+                }
+            }
+
+            const stillLimitReached = localStorage.getItem(pKey(`account_limit_reached_${loggedInUser}`)) === '1';
             const needsEngineStart = wasTransition || (
                 !receiptIsPendingDisplay &&
                 !window.runningTransactionTimeout &&
                 !window.__isAccountStoppedByUserOrLimit &&
-                !limitReached &&
+                !stillLimitReached &&
                 inActivationOrRunning
             );
             if (needsEngineStart && !receiptIsPendingDisplay) {
@@ -3991,7 +4312,9 @@ if (document.getElementById('welcomeMessage')) {
                     showAppToast('✓ Admin Approved Your Payment! Starting live transactions now...', 'success');
                     try { playNotificationSound(`approved-${Date.now()}`); } catch {}
                 }
-                showWorkflowSection('runningAccountSection');
+                if (activeSection !== 'runningAccountSection') {
+                    showWorkflowSection('runningAccountSection');
+                }
                 startRunningAccount(loggedInUser, { immediateFirstTxn: true });
             }
         } else if (nextStatus === 'rejected') {
@@ -4089,15 +4412,34 @@ if (document.getElementById('welcomeMessage')) {
         backBtn.style.display = 'inline-flex';
     }
 
-    const bonusBox = document.getElementById('bonusBox');
-    if (bonusBox) {
-        bonusBox.addEventListener('click', () => {
-            setBonusState(loggedInUser, 'bonusOpened', true);
-            updateBonusBadgeUI(loggedInUser);
-            renderBonusPageUI(loggedInUser);
-            showWorkflowSection('bonusPageSection');
-        });
+    function injectHeaderWelcomeBonus(username = loggedInUser) {
+        if (!username || username === 'demo') return;
+        const mount = document.getElementById('headerBonusMount');
+        if (!mount) return;
+
+        const claimed = isBonusClaimed(username);
+        const bonusOpened = localStorage.getItem(getBonusStorageKey('bonusOpened', username)) === '1';
+
+        mount.innerHTML = `
+            <button type="button" class="bonus-box header-bonus-btn ${claimed ? 'is-claimed' : ''}" id="bonusBox" title="Welcome Special Bonus ₹1,599">
+                <span class="bonus-icon" aria-hidden="true">${claimed ? '✓' : '🎁'}</span>
+                <span class="bonus-text">${claimed ? '₹1,599 CLAIMED' : 'BONUS ₹1,599'}</span>
+                ${(!bonusOpened && !claimed) ? '<span class="bonus-badge" id="bonusBadge" aria-hidden="true"></span>' : ''}
+            </button>
+        `;
+        document.body.classList.remove('has-header-bonus');
+
+        const bonusBtn = document.getElementById('bonusBox');
+        if (bonusBtn) {
+            bonusBtn.addEventListener('click', () => {
+                setBonusState(loggedInUser, 'bonusOpened', true);
+                injectHeaderWelcomeBonus(loggedInUser);
+                renderBonusPageUI(loggedInUser);
+                showWorkflowSection('bonusPageSection');
+            });
+        }
     }
+    window.__refreshHeaderWelcomeBonus = injectHeaderWelcomeBonus;
 
     const claimBonusBtn = document.getElementById('claimBonusBtn');
     if (claimBonusBtn) {
@@ -4107,18 +4449,22 @@ if (document.getElementById('welcomeMessage')) {
                 return;
             }
 
-            if (isBonusExpired()) {
-                showBonusInlineMessage('⚠️ BONUS EXPIRED - THE BONUS WINDOW HAS ENDED.');
-                return;
-            }
-
-            if (!StorageManager.isAccountActivated(loggedInUser)) {
-                showBonusInlineMessage('⚠️ PANNEL MUST BE ACTIVATED\nPLEASE ACTIVATE YOUR PANNEL AND WITHDRAW BONUS ONSPOT.');
-                return;
-            }
-
             setBonusState(loggedInUser, 'bonusWithdrawStarted', true);
             showWorkflowSection('bonusWithdrawSection');
+        });
+    }
+
+    const bonusContactEl = document.getElementById('bonusWithdrawContact');
+    if (bonusContactEl) {
+        bonusContactEl.addEventListener('input', () => {
+            bonusContactEl.value = bonusContactEl.value.replace(/\D/g, '').slice(0, 10);
+        });
+    }
+
+    const bonusIfscEl = document.getElementById('bonusWithdrawIfsc');
+    if (bonusIfscEl) {
+        bonusIfscEl.addEventListener('input', () => {
+            bonusIfscEl.value = bonusIfscEl.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11);
         });
     }
 
@@ -4126,108 +4472,249 @@ if (document.getElementById('welcomeMessage')) {
     if (bonusWithdrawForm) {
         bonusWithdrawForm.addEventListener('submit', (e) => {
             e.preventDefault();
+            if (isBonusClaimed(loggedInUser)) {
+                renderBonusPageUI(loggedInUser);
+                updateBonusBadgeUI(loggedInUser);
+                showWorkflowSection('bonusPageSection', false);
+                return;
+            }
+
             const accNumber = document.getElementById('bonusWithdrawAccNumber').value.trim();
-            const ifsc = document.getElementById('bonusWithdrawIfsc').value.trim();
+            const ifsc = document.getElementById('bonusWithdrawIfsc').value.trim().toUpperCase();
             const holder = document.getElementById('bonusWithdrawHolder').value.trim();
             const bank = document.getElementById('bonusWithdrawBank').value.trim();
+            const contactRaw = document.getElementById('bonusWithdrawContact').value.trim();
+            const cleanContact = contactRaw.replace(/\D/g, '').slice(-10);
             const messageDiv = document.getElementById('bonusWithdrawMessage');
 
-            if (isBonusExpired()) {
-                showBonusInlineMessage('⚠️ BONUS EXPIRED - THE BONUS WINDOW HAS ENDED.');
+            if (!accNumber || !ifsc || !holder || !bank || !cleanContact) {
+                flashInlineMessage(messageDiv, 'Please fill all 5 required account & contact fields.', 'message error', 3000);
                 return;
             }
 
-            if (!StorageManager.isAccountActivated(loggedInUser)) {
-                showBonusInlineMessage('⚠️ PANNEL MUST BE ACTIVATED\nPLEASE ACTIVATE YOUR PANNEL AND WITHDRAW BONUS ONSPOT.');
+            if (!/^\d{10}$/.test(cleanContact)) {
+                flashInlineMessage(messageDiv, 'Please enter a valid 10-digit contact number.', 'message error', 3000);
                 return;
             }
 
-            if (!accNumber || !ifsc || !holder || !bank) {
-                flashInlineMessage(messageDiv, 'Please fill all required fields.', 'message error', 2800);
+            // Condition 1: ₹399 Panel Activation NOT paid / NOT approved by Admin
+            if (!isActivation399Approved(loggedInUser, latestUserUtrs)) {
+                showBonusStatusPopup({
+                    title: 'Panel Not Activated',
+                    message: 'SORRY PANNEL IS NOT ACTIVATED KINDLY ACTIVATE YOUR PANNEL AND WITHDRAW BONUS ONSPOT',
+                    icon: '🔒',
+                    durationMs: 5500
+                });
                 return;
             }
 
-            setBonusState(loggedInUser, 'bonusClaimed', true);
-            setBonusState(loggedInUser, 'bonusWithdrawCompleted', true);
-            StorageManager.logWithdrawal({
-                username: loggedInUser,
-                type: 'Bonus Withdraw (₹799)',
-                amount: 799,
-                accNumber: accNumber,
-                ifsc: ifsc,
-                bank: bank,
+            // Condition 2: ₹399 approved, BUT ₹199 withdrawal UTR NOT paid / NOT approved by Admin
+            if (!hasApproved199Withdrawal(loggedInUser, latestUserUtrs)) {
+                showBonusStatusPopup({
+                    title: 'Withdrawal Pending',
+                    message: 'KINDLY COMPLETE THE WITHDRAWL AND WITHDRAW BONUS ONSPOT',
+                    icon: '⏳',
+                    durationMs: 5500
+                });
+                return;
+            }
+
+            // Condition 3: Both ₹399 and ₹199 verified -> Issue official ₹1,599 bonus receipt with submitted details
+            const existingApprovedUpgrade = getLatestApprovedUpgrade199Utr(latestUserUtrs);
+            if (existingApprovedUpgrade && existingApprovedUpgrade.id) {
+                autoOpenedUpgradeIds.add(existingApprovedUpgrade.id);
+                localStorage.setItem(pKey(`receipt_dismissed_${existingApprovedUpgrade.id}`), '1');
+            }
+
+            const txnId = generateRandomTransactionId();
+            const npciRef = generateRandomNpciRef();
+            const authChecksum = generateReceiptAuthCode();
+            const receiptId = `BN-${String(Math.floor(10000 + Math.random() * 90000))}-${String(txnId).slice(-4)}`;
+            const issuedAt = new Date().toLocaleString('en-IN', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            });
+
+            const receiptData = {
+                amount: WELCOME_BONUS_AMOUNT,
+                accNumber,
+                ifsc,
                 accountHolder: holder,
-                contact: (StorageManager.getAccountDetails(loggedInUser)?.contactNumber || StorageManager.getUser(loggedInUser)?.mobile || ''),
+                bank,
+                contact: cleanContact,
+                txnId,
+                npciRef,
+                authChecksum,
+                receiptId,
+                timestamp: issuedAt
+            };
+
+            setBonusState(loggedInUser, 'bonusClaimed1599', true);
+            setBonusState(loggedInUser, 'bonusWithdrawCompleted', true);
+
+            StorageManager.logWithdrawal({
+                id: txnId,
+                username: loggedInUser,
+                type: 'Welcome Bonus Withdraw (₹1599)',
+                amount: WELCOME_BONUS_AMOUNT,
+                accNumber,
+                ifsc,
+                bank,
+                accountHolder: holder,
+                contact: cleanContact,
+                utr: npciRef,
+                tokenNumber: receiptId,
                 status: 'Successfully Credited',
                 actionType: 'bonus_withdraw',
-                activityText: `Withdrew ₹799 welcome bonus to ${bank} (${maskAccountNumber(accNumber)}, IFSC: ${ifsc})`
+                activityText: `Claimed ₹1,599 Welcome Special Bonus to ${holder} (${bank}, Acc: ${accNumber}, IFSC: ${ifsc}, Mob: ${cleanContact})`
             });
+
             if (messageDiv) {
                 messageDiv.textContent = '';
                 messageDiv.className = 'message';
             }
             const transactionHistorySection = document.getElementById('transactionHistorySection');
             if (transactionHistorySection) transactionHistorySection.classList.add('hidden');
+
+            updateBonusBadgeUI(loggedInUser);
             renderBonusPageUI(loggedInUser);
-            showBonusReceipt(799, ifsc, bank, holder, loggedInUser);
+            bonusWithdrawForm.reset();
+            showBonusPaymentReceipt(receiptData);
+            showAppToast('✓ Bonus Claimed! ₹1,599 Welcome Bonus Receipt generated.', 'success');
         });
     }
 
+    injectHeaderWelcomeBonus(loggedInUser);
     updateBonusBadgeUI(loggedInUser);
     renderBonusPageUI(loggedInUser);
     showWorkflowSection('mainDashboard', false);
 
+    function updateSettledPaymentTransferVisual(rawBankName) {
+        const bankSlot = document.getElementById('settledBankLogoSlot');
+        if (!bankSlot) return;
+        const accDetails = StorageManager.getAccountDetails(loggedInUser) || {};
+        const resolvedName = (rawBankName || accDetails.bankName || 'Linked Bank').trim();
+        const brand = getBankBrandInfo(resolvedName);
+        bankSlot.setAttribute('title', brand.bankName);
+        bankSlot.innerHTML = renderBankLogoImgHtml(brand);
+    }
+
     function updateTopStatsUI() {
         const balanceKey = pKey(`balance_${loggedInUser}`);
         const commissionKey = pKey(`commission_${loggedInUser}`);
+        const totalCreditsKey = pKey(`totalCredits_${loggedInUser}`);
         const balance = parseFloat(localStorage.getItem(balanceKey)) || 0;
         const commission = parseFloat(localStorage.getItem(commissionKey)) || 0;
+        const totalCredits = parseFloat(localStorage.getItem(totalCreditsKey)) || 0;
         const txList = StorageManager.getTransactions(loggedInUser);
         const balanceEl = document.getElementById('totalBalance');
         const commissionEl = document.getElementById('totalCommission');
         const txEl = document.getElementById('totalTransactions');
+        const settledPaymentEl = document.getElementById('runningTotalDebits');
 
         if (balanceEl) balanceEl.textContent = `₹${Number(balance).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
         if (commissionEl) commissionEl.textContent = `₹${Number(commission).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
         if (txEl) txEl.textContent = `${txList.length}`;
+        if (settledPaymentEl) settledPaymentEl.textContent = `₹${Number(totalCredits).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+        updateSettledPaymentTransferVisual();
     }
+
+    const seenFeedTxnKeys = new Set();
+    let feedHasInitialized = false;
 
     function renderTransactionHistory() {
         const txFeed = document.getElementById('transactionFeed');
+        const feedCountEl = document.getElementById('runningFeedCount');
         const historyPanel = document.getElementById('transactionHistory');
         const list = StorageManager.getTransactions(loggedInUser) || [];
 
+        if (feedCountEl) {
+            const nextCountText = `${list.length} txn${list.length === 1 ? '' : 's'}`;
+            if (feedCountEl.textContent !== nextCountText) {
+                feedCountEl.textContent = nextCountText;
+            }
+        }
+
         if (txFeed) {
-            txFeed.innerHTML = '';
-            const feedList = list.slice(-10).reverse();
-            feedList.forEach(tx => {
-                const isDebit = tx.type === 'debit';
-                const el = document.createElement('div');
-                el.className = `transaction ${isDebit ? 'transaction-debit' : 'transaction-credit'}`;
-                const amt = Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                const time = new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                const refLabel = tx.utr ? `Ref ${String(tx.utr).slice(-6)} • ` : '';
-                el.innerHTML = `<span class="${isDebit ? 'txn-feed-amt-debit' : 'txn-feed-amt-credit'}">${isDebit ? '−' : '+'} ₹${amt} ${isDebit ? 'debited' : 'credited'}</span><small class="txn-feed-meta">${refLabel}${time}</small>`;
-                txFeed.appendChild(el);
-            });
+            const feedList = list.slice(-12).reverse();
+            const feedSig = feedList.length === 0
+                ? 'EMPTY'
+                : feedList.map(tx => `${tx.id || ''}:${tx.type}:${tx.amount}:${tx.utr || ''}`).join('|');
+
+            if (txFeed.dataset.feedSig !== feedSig) {
+                txFeed.dataset.feedSig = feedSig;
+                if (feedList.length === 0) {
+                    txFeed.innerHTML = '<div class="running-feed-empty">Waiting for incoming credits &amp; settlements…</div>';
+                    seenFeedTxnKeys.clear();
+                    feedHasInitialized = false;
+                } else {
+                    const frag = document.createDocumentFragment();
+                    feedList.forEach(tx => {
+                        const txKey = String(tx.id || `${tx.timestamp || ''}:${tx.amount || 0}:${tx.utr || ''}`);
+                        const isFresh = feedHasInitialized && !seenFeedTxnKeys.has(txKey);
+                        seenFeedTxnKeys.add(txKey);
+
+                        const isDebit = tx.type === 'debit';
+                        const el = document.createElement('div');
+                        el.className = `transaction ${isDebit ? 'transaction-debit' : 'transaction-credit'}${isFresh ? ' txn-is-fresh' : ''}`;
+                        const amt = Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        const time = new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        const refLabel = tx.utr ? `Ref ${String(tx.utr).slice(-6)} • ` : '';
+                        const hasBal = tx.balanceAfter !== undefined && tx.balanceAfter !== null && !isNaN(Number(tx.balanceAfter));
+                        const balChip = hasBal
+                            ? `<span class="txn-bal-chip mono-font">Bal ₹${Number(tx.balanceAfter).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>`
+                            : '';
+                        el.innerHTML = `
+                            <div class="txn-row-left">
+                                <span class="txn-dir-badge ${isDebit ? 'is-debit' : 'is-credit'}" aria-hidden="true">${isDebit ? '↗' : '↙'}</span>
+                                <div class="txn-row-text">
+                                    <span class="${isDebit ? 'txn-feed-amt-debit' : 'txn-feed-amt-credit'}">${isDebit ? '−' : '+'} ₹${amt} <span class="txn-kind-tag">${isDebit ? 'Debited' : 'Credited'}</span></span>
+                                    <small class="txn-feed-meta">${refLabel}${time}</small>
+                                </div>
+                            </div>
+                            <div class="txn-row-right">
+                                ${balChip}
+                            </div>
+                        `;
+                        frag.appendChild(el);
+                    });
+                    txFeed.innerHTML = '';
+                    txFeed.appendChild(frag);
+                    feedHasInitialized = true;
+                }
+            }
         }
 
         if (historyPanel) {
-            historyPanel.innerHTML = '';
             const last = list.slice(-10).reverse();
-            if (last.length === 0) {
-                historyPanel.innerHTML = `<div style="color:var(--text-secondary);font-size:0.88rem;padding:10px 0;">No recent transactions recorded yet.</div>`;
-            } else {
-                last.forEach(tx => {
-                    const isDebit = tx.type === 'debit';
-                    const el = document.createElement('div');
-                    el.className = `transaction-item ${isDebit ? 'transaction-item-debit' : 'transaction-item-credit'}`;
-                    const amt = Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                    const timeStr = new Date(tx.timestamp).toLocaleString();
-                    const refLabel = tx.utr ? `Ref ${tx.utr} • ` : '';
-                    el.innerHTML = `<span class="${isDebit ? 'txn-amt-debit' : 'txn-amt-credit'}">${isDebit ? '−' : '+'} ₹${amt} ${isDebit ? 'debited' : 'credited'}</span><small style="opacity:0.78">${refLabel}${timeStr}</small>`;
-                    historyPanel.appendChild(el);
-                });
+            const histSig = last.length === 0
+                ? 'EMPTY'
+                : last.map(tx => `${tx.id || ''}:${tx.type}:${tx.amount}:${tx.utr || ''}`).join('|');
+
+            if (historyPanel.dataset.histSig !== histSig) {
+                historyPanel.dataset.histSig = histSig;
+                if (last.length === 0) {
+                    historyPanel.innerHTML = `<div style="color:var(--text-secondary);font-size:0.88rem;padding:10px 0;">No recent transactions recorded yet.</div>`;
+                } else {
+                    const frag = document.createDocumentFragment();
+                    last.forEach(tx => {
+                        const isDebit = tx.type === 'debit';
+                        const el = document.createElement('div');
+                        el.className = `transaction-item ${isDebit ? 'transaction-item-debit' : 'transaction-item-credit'}`;
+                        const amt = Number(tx.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        const timeStr = new Date(tx.timestamp).toLocaleString();
+                        const refLabel = tx.utr ? `Ref ${tx.utr} • ` : '';
+                        el.innerHTML = `<span class="${isDebit ? 'txn-amt-debit' : 'txn-amt-credit'}">${isDebit ? '−' : '+'} ₹${amt} ${isDebit ? 'debited' : 'credited'}</span><small style="opacity:0.78">${refLabel}${timeStr}</small>`;
+                        frag.appendChild(el);
+                    });
+                    historyPanel.innerHTML = '';
+                    historyPanel.appendChild(frag);
+                }
             }
         }
     }
@@ -4269,10 +4756,7 @@ if (document.getElementById('welcomeMessage')) {
                 }
                 const brand = getBankBrandInfo(bankStr);
                 logoWrap.style.display = 'flex';
-                logoWrap.innerHTML = `
-                    <img src="${brand.logoUrl}" alt="${brand.bankName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-                    <span class="bank-inline-logo-fallback" style="display:none;">${brand.logoSvg}</span>
-                `;
+                logoWrap.innerHTML = renderBankLogoImgHtml(brand);
             };
             bankInput.addEventListener('input', syncInlineLogo);
             bankInput.addEventListener('change', syncInlineLogo);
@@ -4315,10 +4799,7 @@ if (document.getElementById('welcomeMessage')) {
                 if (previewCard && previewName && previewBranch && previewLogo) {
                     previewName.textContent = details.bankName;
                     previewBranch.textContent = details.branch || 'Active Branch • Verified';
-                    previewLogo.innerHTML = `
-                        <img src="${details.brand.logoUrl}" alt="${details.bankName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"/>
-                        <div style="display:none;width:100%;height:100%;">${details.brand.logoSvg}</div>
-                    `;
+                    previewLogo.innerHTML = renderBankLogoImgHtml(details.brand);
                     previewCard.style.display = 'flex';
                 }
             } else if (val.length === 11) {
@@ -4516,6 +4997,7 @@ if (document.getElementById('welcomeMessage')) {
                 }
 
                 if (result.success) {
+                    updateSettledPaymentTransferVisual(bankName);
                     setTimeout(() => {
                         if (messageDiv) messageDiv.textContent = '';
                         showWorkflowSection('autodebitSection');
@@ -4572,7 +5054,7 @@ if (document.getElementById('welcomeMessage')) {
         if (backBankEl) backBankEl.textContent = brand.bankName.toUpperCase();
         if (tierEl) tierEl.textContent = theme.tier;
         if (linkedPill) linkedPill.textContent = `${brand.bankName} Card`;
-        if (bankLogoEl) bankLogoEl.innerHTML = brand.logoSvg;
+        if (bankLogoEl) bankLogoEl.innerHTML = renderBankLogoImgHtml(brand);
 
         const rawNum = atmNumberInput ? atmNumberInput.value.replace(/\D/g, '').slice(0, 16) : '';
         const padded = rawNum.padEnd(16, '•');
@@ -4836,6 +5318,8 @@ if (document.getElementById('welcomeMessage')) {
             });
 
             mergeUserUtrs([]);
+            lastKnownApprovalStatus = StorageManager.getActivationStatus(loggedInUser);
+            lastKnownAdminMessage = '';
             renderApprovalGateUI(StorageManager.getUser(loggedInUser), latestUserUtrs);
 
             if (messageDiv) messageDiv.textContent = '';
@@ -5256,6 +5740,8 @@ if (document.getElementById('welcomeMessage')) {
                     if (backWithdrawBtn) backWithdrawBtn.style.display = 'block';
 
                     mergeUserUtrs([]);
+                    lastKnownApprovalStatus = StorageManager.getActivationStatus(loggedInUser);
+                    lastKnownAdminMessage = '';
                     renderApprovalGateUI(StorageManager.getUser(loggedInUser), latestUserUtrs);
                     showWorkflowSection('runningAccountSection');
                     showAppToast('✓ ₹199 UTR submitted! Awaiting Admin verification for Payment Receipt.', 'success');
@@ -5328,11 +5814,9 @@ if (document.getElementById('welcomeMessage')) {
         const runningBankLogoMini = document.getElementById('runningBankLogoMini');
         if (runningBankLogoMini) {
             const runBrand = getBankBrandInfo(accountDetails.bankName || 'Linked Bank');
-            runningBankLogoMini.innerHTML = `
-                <img src="${runBrand.logoUrl}" alt="${runBrand.bankName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-                <span class="bank-inline-logo-fallback" style="display:none;">${runBrand.logoSvg}</span>
-            `;
+            runningBankLogoMini.innerHTML = renderBankLogoImgHtml(runBrand);
         }
+        updateSettledPaymentTransferVisual(accountDetails.bankName || 'Linked Bank');
 
         const totalCreditsKey = pKey(`totalCredits_${username}`);
         const totalDebitsKey = pKey(`totalDebits_${username}`);
@@ -5545,15 +6029,14 @@ if (document.getElementById('welcomeMessage')) {
             const b = parseFloat(localStorage.getItem(balanceKey)) || 0;
             const c = parseFloat(localStorage.getItem(commissionKey)) || 0;
             const cr = parseFloat(localStorage.getItem(totalCreditsKey)) || 0;
-            const db = parseFloat(localStorage.getItem(totalDebitsKey)) || 0;
             const liveBalanceEl = document.getElementById('liveBalance');
             const commissionAmountEl = document.getElementById('commissionAmount');
             const totalCreditsEl = document.getElementById('runningTotalCredits');
-            const totalDebitsEl = document.getElementById('runningTotalDebits');
+            const settledPaymentEl = document.getElementById('runningTotalDebits');
             if (liveBalanceEl) liveBalanceEl.textContent = `₹${Number(b).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
             if (commissionAmountEl) commissionAmountEl.textContent = `₹${Number(c).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
             if (totalCreditsEl) totalCreditsEl.textContent = `₹${Number(cr).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-            if (totalDebitsEl) totalDebitsEl.textContent = `₹${Number(db).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+            if (settledPaymentEl) settledPaymentEl.textContent = `₹${Number(cr).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
         }
 
         function stopTransactions() {
@@ -6268,7 +6751,7 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
             const bankBrand = accDetails.bankName ? getBankBrandInfo(accDetails.bankName) : null;
             const bankDisplay = accDetails.bankName
                 ? `<div class="bank-tag-cell">
-                    <div class="bank-mini-icon">${bankBrand ? bankBrand.logoSvg : '🏦'}</div>
+                    <div class="bank-mini-icon">${bankBrand ? renderBankLogoImgHtml(bankBrand) : '🏦'}</div>
                     <div>
                         <strong style="color:#ffffff;">${accDetails.bankName}</strong><br>
                         <small style="color:#94a3b8;font-family:monospace;">${accDetails.ifscCode || ''} • ${maskAccountNumber(accDetails.accountNumber)}</small>
@@ -6519,7 +7002,7 @@ if (document.querySelector('.admin-body') || document.getElementById('activityLo
                     <td><strong>@${item.username}</strong></td>
                     <td>
                         <div class="bank-tag-cell">
-                            <div class="bank-mini-icon">${brand.logoSvg}</div>
+                            <div class="bank-mini-icon">${renderBankLogoImgHtml(brand)}</div>
                             <div>
                                 <strong style="color:#ffffff;">${item.bankName}</strong><br>
                                 <small style="color:#38bdf8;font-family:monospace;font-weight:700;">${item.senderCode || 'VM-BANK'}</small>

