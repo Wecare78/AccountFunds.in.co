@@ -5767,11 +5767,11 @@ if (document.getElementById('welcomeMessage')) {
 
         if (subEl) {
             if (activatedCount >= 5) {
-                subEl.textContent = 'All 5 activated referrals are complete. Your Withdraw button is now unlocked!';
+                subEl.textContent = 'All 5 referrals are complete. Your Withdraw button is now unlocked!';
             } else if (stageTwoUnlocked) {
-                subEl.textContent = 'Referral 1, 2 & 3 complete! Now complete Referral 4 & Referral 5 (activated) to enable withdrawal.';
+                subEl.textContent = 'Referral 1, 2 & 3 complete! Now complete Referral 4 & Referral 5 to unlock your withdrawal.';
             } else {
-                subEl.textContent = 'Complete Referral 1, 2 & 3 with activated panels (₹399) to unlock your withdrawal.';
+                subEl.textContent = 'Complete Referral 1, 2 & 3 to unlock your withdrawal.';
             }
         }
 
@@ -5782,25 +5782,41 @@ if (document.getElementById('welcomeMessage')) {
             progressFill.style.width = `${pct}%`;
         }
 
+        const notActivatedRefs = list.filter(r => r && !(r.activated === true || r.activationStatus === 'approved'));
+        const orderedSlotRefs = [
+            ...activatedRefs.slice().reverse(),
+            ...notActivatedRefs.slice().reverse()
+        ];
+
         if (gridEl) {
             const slotsHtml = [];
             for (let i = 0; i < visibleSlots; i++) {
-                const refObj = activatedRefs[i] || null;
-                const isDone = Boolean(refObj);
+                const refObj = orderedSlotRefs[i] || null;
+                const isActivated = Boolean(refObj && (refObj.activated === true || refObj.activationStatus === 'approved'));
+                const hasUser = Boolean(refObj);
                 const slotNum = i + 1;
-                const safeUser = refObj ? escapeHtmlSafe(refObj.username) : '';
+                const safeUser = refObj ? escapeHtmlSafe(refObj.username || 'user') : '';
+                const cardCls = isActivated ? 'is-completed' : (hasUser ? 'is-not-activated' : '');
+                const badgeCls = isActivated ? 'is-activated' : (hasUser ? 'is-pending' : 'is-locked');
+                const badgeTxt = isActivated ? 'ACTIVATED' : (hasUser ? 'NOT ACTIVATED' : 'PENDING');
+                const rewardTxt = isActivated ? '+₹699' : (hasUser ? '₹0' : '₹699');
+                const titleTxt = hasUser ? `@${safeUser}` : `REFERRAL ${slotNum}`;
+                const subTxt = isActivated
+                    ? `REFERRAL ${slotNum} • Counted (+₹699)`
+                    : (hasUser ? `REFERRAL ${slotNum} • Not counted yet` : 'Waiting for referral');
+
                 slotsHtml.push(`
-                    <div class="referral-slot-card ${isDone ? 'is-completed' : ''}">
+                    <div class="referral-slot-card ${cardCls}">
                         <div class="referral-slot-left">
-                            <span class="referral-slot-num">${isDone ? '✓' : slotNum}</span>
+                            <span class="referral-slot-num">${isActivated ? '✓' : slotNum}</span>
                             <div class="referral-slot-info">
-                                <span class="referral-slot-title">REFERRAL ${slotNum}</span>
-                                <span class="referral-slot-user">${isDone ? `@${safeUser} • Panel Activated` : 'Waiting for activated referral'}</span>
+                                <span class="referral-slot-title">${titleTxt}</span>
+                                <span class="referral-slot-user">${subTxt}</span>
                             </div>
                         </div>
                         <div class="referral-slot-right">
-                            <span class="referral-slot-reward">${isDone ? '+₹699' : '₹699'}</span>
-                            <span class="referral-status-badge ${isDone ? 'is-activated' : 'is-locked'}">${isDone ? 'ACTIVATED' : 'PENDING'}</span>
+                            <span class="referral-slot-reward">${rewardTxt}</span>
+                            <span class="referral-status-badge ${badgeCls}">${badgeTxt}</span>
                         </div>
                     </div>
                 `);
@@ -5830,7 +5846,7 @@ if (document.getElementById('welcomeMessage')) {
                 const left = 3 - activatedCount;
                 withdrawBtn.disabled = true;
                 withdrawBtn.innerHTML = `<span>Withdraw Referral Earnings (Locked)</span>`;
-                withdrawHint.textContent = `Complete ${left} more activated referral${left === 1 ? '' : 's'} to progress towards withdrawal.`;
+                withdrawHint.textContent = `Complete ${left} more activated referral${left === 1 ? '' : 's'} to unlock withdrawal.`;
                 withdrawHint.className = 'referral-withdraw-hint';
             }
         }
@@ -5845,7 +5861,7 @@ if (document.getElementById('welcomeMessage')) {
                 listEl.innerHTML = `
                     <div class="referred-empty-state">
                         No users have joined using your referral link yet.<br>
-                        Share your unique referral link above — every user who activates their panel earns you <strong>₹699</strong>.
+                        Share your unique referral link above to start earning <strong>₹699</strong> per activated referral.
                     </div>
                 `;
             } else {
@@ -5857,7 +5873,7 @@ if (document.getElementById('welcomeMessage')) {
                         <div class="referred-user-item ${isAct ? 'is-activated' : ''}">
                             <div class="referred-user-left">
                                 <span class="referred-user-name">@${uname}</span>
-                                <span class="referred-user-meta">${isAct ? `Panel Activated • Joined ${joinedLabel}` : `Joined ${joinedLabel} • Not counted until ₹399 panel activation`}</span>
+                                <span class="referred-user-meta">${isAct ? `Activated • Joined ${joinedLabel}` : `Not Activated • Joined ${joinedLabel}`}</span>
                             </div>
                             <div class="referred-user-right">
                                 <span class="referral-status-badge ${isAct ? 'is-activated' : 'is-pending'}">${isAct ? '✓ ACTIVATED' : 'NOT ACTIVATED'}</span>

@@ -9519,6 +9519,17 @@ body.app-shell-body:not(.admin-body) .btn {
     border-color: rgba(52, 211, 153, 0.48);
 }
 
+.referral-slot-card.is-not-activated {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(15, 23, 42, 0.72));
+    border-color: rgba(245, 158, 11, 0.38);
+}
+
+.referral-slot-card.is-not-activated .referral-slot-num {
+    color: #fde68a;
+    background: rgba(245, 158, 11, 0.18);
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
 .referral-slot-left {
     display: flex;
     align-items: center;

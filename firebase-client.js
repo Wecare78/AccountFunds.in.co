@@ -112,9 +112,14 @@ function readJson(storageKey, fallback) {
   }
 }
 
+const lastWrittenJsonCache = new Map();
+
 function writeJson(storageKey, val) {
   try {
-    localStorage.setItem(storageKey, JSON.stringify(val));
+    const serialized = JSON.stringify(val);
+    if (lastWrittenJsonCache.get(storageKey) === serialized) return;
+    lastWrittenJsonCache.set(storageKey, serialized);
+    localStorage.setItem(storageKey, serialized);
   } catch {}
 }
 
@@ -346,7 +351,7 @@ async function apiJson(url, options = {}) {
   const hasBackend = await isExpressBackendAvailable();
   if (!hasBackend) return { ok: false, status: 0, data: null };
   ensureServerSseConnected();
-  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 3500;
+  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 1500;
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
   try {
@@ -886,43 +891,43 @@ async function fsUpsertUser(uname, patch) {
   let targetRef = fs.doc(db, COLLECTIONS.users, docId);
   let path = `${COLLECTIONS.users}/${docId}`;
 
-  let existsSnap = null;
+  const filteredPatch = sanitizeUserPatch(patch);
+  if (Object.keys(filteredPatch).length === 0) return true;
+
+  // Fast-path: single RTT direct updateDoc (avoids blocking getDocFromServer before every write)
   try {
-    existsSnap = await getDocServerFirst(ctx, targetRef);
+    await fs.updateDoc(targetRef, filteredPatch);
+    return true;
   } catch (err) {
-    handleFirestoreError(err, OperationType.GET, path);
+    const code = String(err?.code || '').toLowerCase();
+    const msg = String(err?.message || '').toLowerCase();
+    const isNotFound = code === 'not-found' || msg.includes('no document to update') || msg.includes('not-found');
+    if (!isNotFound) {
+      handleFirestoreError(err, OperationType.UPDATE, path);
+      return false;
+    }
   }
 
-  if (!existsSnap || !existsSnap.exists()) {
-    try {
-      const q = fs.query(fs.collection(db, COLLECTIONS.users), fs.where('username', '==', cleanUname));
-      const qs = await getDocsServerFirst(ctx, q);
-      if (qs && !qs.empty) {
-        existsSnap = qs.docs[0];
-        targetRef = existsSnap.ref;
-        path = `${COLLECTIONS.users}/${existsSnap.id}`;
-      }
-    } catch {}
-  }
-
-  if (existsSnap && existsSnap.exists()) {
-    const filteredPatch = sanitizeUserPatch(patch);
-    if (Object.keys(filteredPatch).length === 0) return true;
-    try {
+  // Fallback when docId did not exist yet: check by username query once, else create full valid doc
+  try {
+    const q = fs.query(fs.collection(db, COLLECTIONS.users), fs.where('username', '==', cleanUname));
+    const qs = await fs.getDocs(q);
+    if (qs && !qs.empty) {
+      const found = qs.docs[0];
+      targetRef = found.ref;
+      path = `${COLLECTIONS.users}/${found.id}`;
       await fs.updateDoc(targetRef, filteredPatch);
       return true;
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, path);
     }
-  } else {
-    const local = findLocalUser(cleanUname) || { username: cleanUname, docId };
-    const fullDoc = buildValidFirestoreUser(local, patch);
-    try {
-      await fs.setDoc(targetRef, fullDoc);
-      return true;
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    }
+  } catch {}
+
+  const local = findLocalUser(cleanUname) || { username: cleanUname, docId };
+  const fullDoc = buildValidFirestoreUser(local, patch);
+  try {
+    await fs.setDoc(targetRef, fullDoc);
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
   }
   return false;
 }
@@ -1049,6 +1054,7 @@ async function pullAllFromRtdbIfConfigured() {
 const localOtps = new Map();
 const recentlyDeletedUsers = new Map();
 const recentlyUpdatedUtrs = new Map();
+const recentlyUpdatedUsers = new Map();
 const forceSyncListeners = new Set();
 let activeTargetMobile = '';
 
@@ -1544,6 +1550,32 @@ const store = {
     let visibilityHandler = null;
     let fsUserState = null;
     let expressUserState = null;
+    let fsLiveHealthy = false;
+    let lastEmittedFp = '';
+    let lastForcedTickAt = 0;
+
+    const buildUserFp = (usr) => {
+      if (!usr) return '';
+      const txns = Array.isArray(usr.transactions) ? usr.transactions : [];
+      const lastTxn = txns.length > 0 ? txns[txns.length - 1] : null;
+      const acc = usr.accountDetails || {};
+      return [
+        usr.username || '',
+        usr.activated ? '1' : '0',
+        usr.activationStatus || '',
+        usr.rejectionMessage || '',
+        safeNum(usr.balance),
+        safeNum(usr.commission),
+        txns.length,
+        lastTxn?.id || lastTxn?.timestamp || '',
+        usr.activationCode || '',
+        usr.referralCode || '',
+        usr.referredByCode || '',
+        acc.bankName || '',
+        acc.accountNumber || '',
+        usr.autodebitDetails ? '1' : '0',
+      ].join('|');
+    };
 
     const mergeAndEmitUser = () => {
       if (stopped) return;
@@ -1551,7 +1583,6 @@ const store = {
       const candidates = [localUser, expressUserState, fsUserState].filter(Boolean);
       if (candidates.length === 0) return;
 
-      // Combine cleanly prioritizing latest authoritative status & non-null details
       let merged = { ...candidates[0] };
       for (const c of candidates.slice(1)) {
         const prevTxns = Array.isArray(merged.transactions) ? merged.transactions : [];
@@ -1574,7 +1605,6 @@ const store = {
         };
       }
 
-      // Latest remote (fsUserState or expressUserState) wins cleanly
       const primaryRemote = fsUserState || expressUserState;
       if (fsUserState && expressUserState) {
         if (
@@ -1604,6 +1634,10 @@ const store = {
         merged.rejectionMessage = primaryRemote.rejectionMessage || '';
       }
 
+      const fp = buildUserFp(merged);
+      if (fp === lastEmittedFp) return;
+      lastEmittedFp = fp;
+
       const users = getLocalUsersMap();
       users[merged.username || u] = merged;
       saveLocalUsersMap(users);
@@ -1615,6 +1649,9 @@ const store = {
       const user = findLocalUser(u);
       if (user) {
         if (!fsUserState && !expressUserState) {
+          const fp = buildUserFp(user);
+          if (fp === lastEmittedFp) return;
+          lastEmittedFp = fp;
           cb(user);
         } else {
           mergeAndEmitUser();
@@ -1627,6 +1664,7 @@ const store = {
 
     let fsCtxRef = null;
     let boundDocId = toDocId(u);
+    let fallbackQueried = false;
 
     const attachDocSnapshot = (ctx, targetDocId) => {
       if (stopped || !ctx) return;
@@ -1641,15 +1679,37 @@ const store = {
         docRef,
         (snap) => {
           if (stopped) return;
+          fsLiveHealthy = true;
           if (snap.exists()) {
             fsUserState = snap.data();
             mergeAndEmitUser();
+          } else if (!fallbackQueried) {
+            fallbackQueried = true;
+            void fetchFsUserByUsername(ctx);
           }
         },
         (error) => {
+          fsLiveHealthy = false;
           handleSnapshotError(error, OperationType.GET, path);
         }
       );
+    };
+
+    const fetchFsUserByUsername = async (ctx) => {
+      if (stopped || !ctx || !u || u === 'demo') return;
+      try {
+        const qs = await ctx.fs.getDocs(
+          ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('username', '==', u))
+        );
+        if (!stopped && qs && !qs.empty) {
+          const foundDoc = qs.docs[0];
+          fsUserState = foundDoc.data();
+          if (foundDoc.id && foundDoc.id !== boundDocId) {
+            attachDocSnapshot(ctx, foundDoc.id);
+          }
+          mergeAndEmitUser();
+        }
+      } catch {}
     };
 
     const fetchFsUserOnce = async () => {
@@ -1663,32 +1723,21 @@ const store = {
           mergeAndEmitUser();
           return ctx;
         }
-        const qs = await getDocsServerFirst(
-          ctx,
-          ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('username', '==', u))
-        );
-        if (!stopped && qs && !qs.empty) {
-          const foundDoc = qs.docs[0];
-          fsUserState = foundDoc.data();
-          if (foundDoc.id && foundDoc.id !== boundDocId) {
-            attachDocSnapshot(ctx, foundDoc.id);
-          }
-          mergeAndEmitUser();
-        }
+        await fetchFsUserByUsername(ctx);
       } catch {}
       return ctx;
     };
 
     const setupRemote = async () => {
-      const ctx = await fetchFsUserOnce();
+      const [ctx, hasBackend] = await Promise.all([getFirestoreContext(), isExpressBackendAvailable()]);
       if (stopped) return;
-      if (ctx && u && u !== 'demo' && !unsubFirestore) {
+      if (ctx && u && u !== 'demo') {
+        fsCtxRef = ctx;
+        // Attach real-time onSnapshot IMMEDIATELY (zero blocking round-trip first)
         attachDocSnapshot(ctx, boundDocId);
       }
 
-      const hasBackend = await isExpressBackendAvailable();
       const cfg = getActiveCloudConfig();
-      if (stopped) return;
 
       const fetchExpressProfile = async () => {
         if (stopped || backendAvailable !== true || !u || u === 'demo') return;
@@ -1713,6 +1762,10 @@ const store = {
       const tick = async (force = false) => {
         if (stopped) return;
         if (!force && typeof document !== 'undefined' && document.hidden) return;
+        const now = Date.now();
+        if (force && now - lastForcedTickAt < 1500) return;
+        if (force) lastForcedTickAt = now;
+
         const activeCfg = getActiveCloudConfig();
         if (activeCfg.mode === 'rtdb' && activeCfg.rtdbUrl) {
           const r = await rtdbFetch(`users/${encodeURIComponent(toDocId(u))}`, 'GET');
@@ -1720,10 +1773,10 @@ const store = {
             expressUserState = r.data;
             mergeAndEmitUser();
           }
-        } else {
+        } else if (force || !fsLiveHealthy) {
           await fetchFsUserOnce();
         }
-        if (backendAvailable === true) {
+        if (backendAvailable === true && (force || !sseSource)) {
           await fetchExpressProfile();
         }
       };
@@ -1731,8 +1784,15 @@ const store = {
       if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
         void tick(true);
       }
-      // Keep fast visible-tab server polling so approvals/replies never wait on stalled WebChannel
-      pollTimer = setInterval(() => void tick(false), 2200);
+      // Low-overhead heartbeat: onSnapshot handles instant pushes (<200ms); polling only runs as fallback
+      let pollTickCount = 0;
+      pollTimer = setInterval(() => {
+        pollTickCount += 1;
+        const isRtdb = getActiveCloudConfig().mode === 'rtdb';
+        if (isRtdb || !fsLiveHealthy || pollTickCount % 4 === 0) {
+          void tick(false);
+        }
+      }, 3000);
 
       if (typeof window !== 'undefined') {
         focusHandler = () => void tick(true);
@@ -1772,6 +1832,9 @@ const store = {
     let visibilityHandler = null;
     let fsUtrs = null;
     let expressUtrs = null;
+    let fsLiveHealthy = false;
+    let lastEmittedFp = '';
+    let lastForcedTickAt = 0;
 
     const statusScore = (s) => {
       const str = String(s || '').toLowerCase();
@@ -1798,6 +1861,11 @@ const store = {
 
       const items = Array.from(byId.values());
       items.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+
+      const fp = items.map((w) => `${w.id}:${w.status}:${w.utr || ''}:${w.amount || ''}`).join(';');
+      if (fp === lastEmittedFp) return;
+      lastEmittedFp = fp;
+
       const localOthers = getLocalUtrs().filter((w) => w && w.username !== u);
       saveLocalUtrs([...items, ...localOthers]);
       cb(items);
@@ -1829,17 +1897,20 @@ const store = {
     };
 
     const setupFirestore = async () => {
-      const ctx = await fetchFsUtrsOnce();
+      const ctx = await getFirestoreContext();
       if (stopped || !ctx || !u || u === 'demo') return ctx;
+      fsCtxRef = ctx;
       const q = ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.utrs), ctx.fs.where('username', '==', u));
       unsubFirestore = ctx.fs.onSnapshot(
         q,
         (qs) => {
           if (stopped) return;
+          fsLiveHealthy = true;
           fsUtrs = qs.docs.map((d) => d.data()).filter(Boolean);
           mergeAndEmitUtrs();
         },
         (error) => {
+          fsLiveHealthy = false;
           handleSnapshotError(error, OperationType.LIST, COLLECTIONS.utrs);
         }
       );
@@ -1847,8 +1918,7 @@ const store = {
     };
 
     const setupRemote = async () => {
-      const fsCtxPromise = setupFirestore();
-      const [, hasBackend] = await Promise.all([fsCtxPromise, isExpressBackendAvailable()]);
+      const [, hasBackend] = await Promise.all([setupFirestore(), isExpressBackendAvailable()]);
       const cfg = getActiveCloudConfig();
       if (stopped) return;
 
@@ -1875,6 +1945,10 @@ const store = {
       const tick = async (force = false) => {
         if (stopped) return;
         if (!force && typeof document !== 'undefined' && document.hidden) return;
+        const now = Date.now();
+        if (force && now - lastForcedTickAt < 1500) return;
+        if (force) lastForcedTickAt = now;
+
         const activeCfg = getActiveCloudConfig();
         if (activeCfg.mode === 'rtdb' && activeCfg.rtdbUrl) {
           const r = await rtdbFetch('utrs', 'GET');
@@ -1882,10 +1956,10 @@ const store = {
             expressUtrs = Object.values(r.data).filter((w) => w && w.username === u);
             mergeAndEmitUtrs();
           }
-        } else {
+        } else if (force || !fsLiveHealthy) {
           await fetchFsUtrsOnce();
         }
-        if (backendAvailable === true) {
+        if (backendAvailable === true && (force || !sseSource)) {
           await fetchExpressUtrs();
         }
       };
@@ -1893,7 +1967,14 @@ const store = {
       if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
         void tick(true);
       }
-      pollTimer = setInterval(() => void tick(false), 2200);
+      let pollTickCount = 0;
+      pollTimer = setInterval(() => {
+        pollTickCount += 1;
+        const isRtdb = getActiveCloudConfig().mode === 'rtdb';
+        if (isRtdb || !fsLiveHealthy || pollTickCount % 4 === 0) {
+          void tick(false);
+        }
+      }, 3000);
 
       if (typeof window !== 'undefined') {
         focusHandler = () => void tick(true);
@@ -1936,6 +2017,9 @@ const store = {
     let fsByCode = [];
     let fsByUser = [];
     let expressRefs = [];
+    let fsLiveHealthy = false;
+    let lastEmittedFp = '';
+    let lastForcedTickAt = 0;
 
     const isReferredActivated = (rec) => {
       if (!rec) return false;
@@ -1977,6 +2061,11 @@ const store = {
 
       const list = Array.from(byName.values());
       list.sort((a, b) => new Date(a.registeredAt || 0).getTime() - new Date(b.registeredAt || 0).getTime());
+
+      const fp = list.map((r) => `${r.username}:${r.activated ? '1' : '0'}:${r.activationStatus}`).join(';');
+      if (fp === lastEmittedFp) return;
+      lastEmittedFp = fp;
+
       cb(list);
     };
 
@@ -2009,30 +2098,37 @@ const store = {
     };
 
     const setup = async () => {
-      const ctx = await fetchFsOnce();
+      const [ctx, hasBackend] = await Promise.all([getFirestoreContext(), isExpressBackendAvailable()]);
       if (stopped) return;
 
       if (ctx && cleanUser && cleanUser !== 'demo') {
+        fsCtxRef = ctx;
         try {
           const qCode = ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('referredByCode', '==', myCode));
           unsubByCode = ctx.fs.onSnapshot(
             qCode,
             (qs) => {
               if (stopped) return;
+              fsLiveHealthy = true;
               fsByCode = qs.docs.map((d) => d.data()).filter(Boolean);
               mergeAndEmit();
             },
-            () => {}
+            () => {
+              fsLiveHealthy = false;
+            }
           );
           const qUser = ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('referredBy', '==', cleanUser));
           unsubByUser = ctx.fs.onSnapshot(
             qUser,
             (qs) => {
               if (stopped) return;
+              fsLiveHealthy = true;
               fsByUser = qs.docs.map((d) => d.data()).filter(Boolean);
               mergeAndEmit();
             },
-            () => {}
+            () => {
+              fsLiveHealthy = false;
+            }
           );
         } catch {}
       }
@@ -2046,20 +2142,25 @@ const store = {
         }
       };
 
-      if (await isExpressBackendAvailable()) {
+      if (hasBackend) {
         void fetchExpressRefs();
       }
 
       const tick = async (force = false) => {
         if (stopped) return;
         if (!force && typeof document !== 'undefined' && document.hidden) return;
-        await fetchFsOnce();
-        if (backendAvailable === true) {
+        const now = Date.now();
+        if (force && now - lastForcedTickAt < 2000) return;
+        if (force) lastForcedTickAt = now;
+        if (force || !fsLiveHealthy) {
+          await fetchFsOnce();
+        }
+        if (backendAvailable === true && (force || !sseSource)) {
           await fetchExpressRefs();
         }
       };
 
-      pollTimer = setInterval(() => void tick(false), 3500);
+      pollTimer = setInterval(() => void tick(false), 15000);
       if (typeof window !== 'undefined') {
         focusHandler = () => void tick(true);
         window.addEventListener('focus', focusHandler);
