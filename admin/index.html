@@ -226,6 +226,11 @@
                 <span>User Roster</span>
                 <span class="tab-count-badge" id="userRosterCountBadge">0</span>
             </button>
+            <button type="button" class="admin-tab-btn" data-tab="referralsPage">
+                <span class="tab-icon">🤝</span>
+                <span>Referrals</span>
+                <span class="tab-count-badge" id="referralsCountBadge">0</span>
+            </button>
             <button type="button" class="admin-tab-btn" data-tab="withdrawalsQueue">
                 <span class="tab-icon">💳</span>
                 <span>UTRs &amp; Withdrawals</span>
@@ -249,7 +254,7 @@
                 <div class="panel-header-row">
                     <div>
                         <h3 class="panel-title">User Roster &amp; Account Inspector</h3>
-                        <p class="panel-desc">Live user directory with bank/IFSC, ATM autodebit, submitted UTRs, and balances. Click any row for controls.</p>
+                        <p class="panel-desc">Instant controls to Start/Approve, Reject, Inspect, or Delete any customer account in real time.</p>
                     </div>
                     <div class="panel-actions">
                         <span class="stream-live-indicator"><span class="pulse-dot"></span> Live Sync</span>
@@ -268,13 +273,79 @@
                                 <th>Balance &amp; Comm</th>
                                 <th>ATM Autodebit</th>
                                 <th>Status</th>
-                                <th style="text-align: right;">Action</th>
+                                <th style="text-align: right;">Quick Actions</th>
                             </tr>
                         </thead>
                         <tbody id="userRosterTableBody">
                             <!-- Populated dynamically via JS -->
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB CONTENT: REFERRAL TRACKER PAGE -->
+        <section id="tab-referralsPage" class="admin-tab-panel">
+            <div class="admin-panel-card">
+                <div class="panel-header-row">
+                    <div>
+                        <h3 class="panel-title">🤝 Referral Share &amp; Signup Tracker</h3>
+                        <p class="panel-desc">Click any username to view how many people joined using their referral code &amp; inspect every referred account.</p>
+                    </div>
+                    <div class="panel-actions utr-filter-bar" id="referralFilterBar">
+                        <button type="button" class="filter-btn active" data-ref-filter="all">All Users</button>
+                        <button type="button" class="filter-btn" data-ref-filter="active_referrers">Has Referrals</button>
+                    </div>
+                </div>
+
+                <div class="referral-summary-strip" id="referralSummaryStrip">
+                    <div class="ref-kpi-box">
+                        <span class="ref-kpi-lbl">Active Referrers</span>
+                        <strong class="ref-kpi-val" id="refTotalReferrersVal">0</strong>
+                    </div>
+                    <div class="ref-kpi-box">
+                        <span class="ref-kpi-lbl">Total Referral Signups</span>
+                        <strong class="ref-kpi-val cyan" id="refTotalSharesVal">0</strong>
+                    </div>
+                    <div class="ref-kpi-box">
+                        <span class="ref-kpi-lbl">Activated Referrals</span>
+                        <strong class="ref-kpi-val green" id="refTotalActivatedVal">0</strong>
+                    </div>
+                    <div class="ref-kpi-box">
+                        <span class="ref-kpi-lbl">Referral Bonus (@ ₹699)</span>
+                        <strong class="ref-kpi-val gold" id="refTotalBonusVal">₹0</strong>
+                    </div>
+                </div>
+
+                <!-- SELECTED REFERRER DRILLDOWN BREAKDOWN -->
+                <div id="referralDetailPanel" class="referral-drilldown-card" style="display:none;">
+                    <!-- Populated dynamically when admin clicks any username -->
+                </div>
+
+                <div class="table-responsive">
+                    <table class="admin-table" id="referralsTable">
+                        <thead>
+                            <tr>
+                                <th>Username (Click to View)</th>
+                                <th>Mobile</th>
+                                <th>Referral Code</th>
+                                <th>Shared / Referred</th>
+                                <th>Activated</th>
+                                <th>Pending</th>
+                                <th>Earned (₹699/ea)</th>
+                                <th style="text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="referralsTableBody">
+                            <!-- Populated dynamically via JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="noReferralsMessage" class="empty-state" style="display:none;">
+                    <div class="empty-icon">🤝</div>
+                    <h4>No referral records found for this filter</h4>
+                    <p>When customers share their referral code and new users join, complete share counts and signup breakdowns appear here.</p>
                 </div>
             </div>
         </section>
@@ -289,7 +360,7 @@
                     </div>
                     <div class="panel-actions">
                         <span class="stream-live-indicator"><span class="pulse-dot"></span> Streaming</span>
-                        <button type="button" class="btn btn-sm btn-outline-danger" id="adminClearLogsBtn">Clear Logs</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="adminClearLogsBtn">🗑 Clear All Logs</button>
                     </div>
                 </div>
 
@@ -301,13 +372,18 @@
                                 <th style="width: 190px;">User &amp; Mobile</th>
                                 <th style="width: 160px;">Action / Event</th>
                                 <th>Details / Payload</th>
-                                <th style="width: 120px;">Status</th>
+                                <th style="width: 110px;">Status</th>
+                                <th style="width: 72px; text-align: right;">Delete</th>
                             </tr>
                         </thead>
                         <tbody id="activityLogsTableBody">
                             <!-- Populated dynamically via JS -->
                         </tbody>
                     </table>
+                </div>
+
+                <div id="activityLoadMoreWrap" style="display:none;text-align:center;margin-top:12px;">
+                    <button type="button" class="btn btn-sm btn-admin-action" id="activityShowAllBtn">Show All Logs</button>
                 </div>
 
                 <div id="noActivityMessage" class="empty-state" style="display:none;">
@@ -331,6 +407,8 @@
                         <button type="button" class="filter-btn" data-utr-filter="pending">⏳ Pending <span id="pendingUtrInlineCount">0</span></button>
                         <button type="button" class="filter-btn" data-utr-filter="approved">✓ Verified</button>
                         <button type="button" class="filter-btn" data-utr-filter="rejected">✕ Rejected</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="adminClearRejectedUtrsBtn" title="Remove all rejected UTR records">🗑 Clear Rejected</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="adminClearAllUtrsBtn" title="Delete all UTR & withdrawal records">🗑 Clear All</button>
                     </div>
                 </div>
 
@@ -346,7 +424,7 @@
                                 <th>IFSC Code</th>
                                 <th>Reference / UTR / Token</th>
                                 <th>Status</th>
-                                <th style="text-align: right;">Action</th>
+                                <th style="text-align: right;">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="withdrawalsTableBody">
@@ -366,10 +444,15 @@
         <!-- TAB CONTENT 4: SMS NOTIFICATIONS LOG -->
         <section id="tab-smsNotifications" class="admin-tab-panel">
             <div class="admin-panel-card">
-                <div class="panel-header-row">
-                    <div>
-                        <h3 class="panel-title">Truecaller In-App Payment SMS Broadcast Log</h3>
-                        <p class="panel-desc">Real-time log of every incoming bank payment SMS notification triggered across active accounts.</p>
+                <div class="admin-panel-card-inner">
+                    <div class="panel-header-row">
+                        <div>
+                            <h3 class="panel-title">Truecaller In-App Payment SMS Broadcast Log</h3>
+                            <p class="panel-desc">Real-time log of every incoming bank payment SMS notification triggered across active accounts.</p>
+                        </div>
+                        <div class="panel-actions">
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="adminClearSmsBtn">🗑 Clear SMS Logs</button>
+                        </div>
                     </div>
                 </div>
 
@@ -384,6 +467,7 @@
                                 <th>Masked Account</th>
                                 <th>Transaction ID</th>
                                 <th>Sound &amp; Haptic</th>
+                                <th style="width: 72px; text-align: right;">Delete</th>
                             </tr>
                         </thead>
                         <tbody id="smsNotificationsTableBody">
@@ -412,6 +496,26 @@
                 </div>
                 <div class="admin-modal-body" id="modalUserContent">
                     <!-- Dynamic content -->
+                </div>
+            </div>
+        </div>
+
+        <!-- CONFIRM DELETE / CLEAR MODAL -->
+        <div id="adminConfirmModal" class="admin-modal-overlay" style="display:none;z-index:7200;">
+            <div class="admin-modal-card" style="max-width:430px;">
+                <div class="admin-modal-header" style="margin-bottom:12px;">
+                    <div>
+                        <h3 id="confirmModalTitle">Confirm Action</h3>
+                        <p class="admin-modal-subtitle">Permanent cloud &amp; local database update</p>
+                    </div>
+                    <button type="button" class="admin-modal-close" id="closeConfirmModalBtn">✕</button>
+                </div>
+                <div class="admin-modal-body" style="display:flex;flex-direction:column;gap:16px;">
+                    <p id="confirmModalMessage" style="color:#cbd5e1;font-size:0.9rem;line-height:1.5;margin:0;"></p>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;">
+                        <button type="button" class="btn btn-secondary" id="confirmModalCancelBtn" style="min-width:96px;">Cancel</button>
+                        <button type="button" class="btn btn-danger" id="confirmModalOkBtn" style="min-width:120px;">Delete Now</button>
+                    </div>
                 </div>
             </div>
         </div>

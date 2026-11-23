@@ -112,9 +112,14 @@ function readJson(storageKey, fallback) {
   }
 }
 
+const lastWrittenJsonCache = new Map();
+
 function writeJson(storageKey, val) {
   try {
-    localStorage.setItem(storageKey, JSON.stringify(val));
+    const serialized = JSON.stringify(val);
+    if (lastWrittenJsonCache.get(storageKey) === serialized) return;
+    lastWrittenJsonCache.set(storageKey, serialized);
+    localStorage.setItem(storageKey, serialized);
   } catch {}
 }
 
@@ -346,7 +351,7 @@ async function apiJson(url, options = {}) {
   const hasBackend = await isExpressBackendAvailable();
   if (!hasBackend) return { ok: false, status: 0, data: null };
   ensureServerSseConnected();
-  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 3500;
+  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 1500;
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
   try {
@@ -886,43 +891,42 @@ async function fsUpsertUser(uname, patch) {
   let targetRef = fs.doc(db, COLLECTIONS.users, docId);
   let path = `${COLLECTIONS.users}/${docId}`;
 
-  let existsSnap = null;
+  const filteredPatch = sanitizeUserPatch(patch);
+  if (Object.keys(filteredPatch).length === 0) return true;
+
+  // Fast-path: single RTT direct updateDoc
   try {
-    existsSnap = await getDocServerFirst(ctx, targetRef);
+    await fs.updateDoc(targetRef, filteredPatch);
+    return true;
   } catch (err) {
-    handleFirestoreError(err, OperationType.GET, path);
+    const code = String(err?.code || '').toLowerCase();
+    const msg = String(err?.message || '').toLowerCase();
+    const isNotFound = code === 'not-found' || msg.includes('no document to update') || msg.includes('not-found');
+    if (!isNotFound) {
+      handleFirestoreError(err, OperationType.UPDATE, path);
+      return false;
+    }
   }
 
-  if (!existsSnap || !existsSnap.exists()) {
-    try {
-      const q = fs.query(fs.collection(db, COLLECTIONS.users), fs.where('username', '==', cleanUname));
-      const qs = await getDocsServerFirst(ctx, q);
-      if (qs && !qs.empty) {
-        existsSnap = qs.docs[0];
-        targetRef = existsSnap.ref;
-        path = `${COLLECTIONS.users}/${existsSnap.id}`;
-      }
-    } catch {}
-  }
-
-  if (existsSnap && existsSnap.exists()) {
-    const filteredPatch = sanitizeUserPatch(patch);
-    if (Object.keys(filteredPatch).length === 0) return true;
-    try {
+  try {
+    const q = fs.query(fs.collection(db, COLLECTIONS.users), fs.where('username', '==', cleanUname));
+    const qs = await fs.getDocs(q);
+    if (qs && !qs.empty) {
+      const found = qs.docs[0];
+      targetRef = found.ref;
+      path = `${COLLECTIONS.users}/${found.id}`;
       await fs.updateDoc(targetRef, filteredPatch);
       return true;
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, path);
     }
-  } else {
-    const local = findLocalUser(cleanUname) || { username: cleanUname, docId };
-    const fullDoc = buildValidFirestoreUser(local, patch);
-    try {
-      await fs.setDoc(targetRef, fullDoc);
-      return true;
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    }
+  } catch {}
+
+  const local = findLocalUser(cleanUname) || { username: cleanUname, docId };
+  const fullDoc = buildValidFirestoreUser(local, patch);
+  try {
+    await fs.setDoc(targetRef, fullDoc);
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.CREATE, path);
   }
   return false;
 }
@@ -1049,6 +1053,12 @@ async function pullAllFromRtdbIfConfigured() {
 const localOtps = new Map();
 const recentlyDeletedUsers = new Map();
 const recentlyUpdatedUtrs = new Map();
+const recentlyDeletedUtrs = new Map();
+const recentlyDeletedLogs = new Map();
+const recentlyDeletedSms = new Map();
+let logsClearedGuardUntil = 0;
+let smsClearedGuardUntil = 0;
+let utrsClearedGuardUntil = 0;
 const forceSyncListeners = new Set();
 let activeTargetMobile = '';
 
@@ -2604,15 +2614,32 @@ const store = {
       fsAttached = false;
     };
 
+    let lastDashboardFp = '';
+
+    const pruneExpired = (map, nowMs) => {
+      for (const [key, exp] of map.entries()) {
+        if (exp <= nowMs) map.delete(key);
+      }
+    };
+
     const mergeAndEmit = () => {
       if (stopped) return;
       const nowMs = Date.now();
-      for (const [delU, exp] of recentlyDeletedUsers.entries()) {
-        if (exp <= nowMs) recentlyDeletedUsers.delete(delU);
-      }
+      pruneExpired(recentlyDeletedUsers, nowMs);
+      pruneExpired(recentlyDeletedUtrs, nowMs);
+      pruneExpired(recentlyDeletedLogs, nowMs);
+      pruneExpired(recentlyDeletedSms, nowMs);
+      pruneExpired(recentlyUpdatedUtrs, nowMs);
+
       const isRecentlyDeleted = (uname) => {
         const exp = recentlyDeletedUsers.get(uname);
         return Boolean(exp && exp > nowMs);
+      };
+      const isDeletedId = (map, item) => {
+        if (!item) return true;
+        if (item.id && (map.get(item.id) || 0) > nowMs) return true;
+        if (item.utr && (map.get(item.utr) || 0) > nowMs) return true;
+        return false;
       };
 
       const fsHasUsersSnapshot = fsState.usersMap !== null;
@@ -2694,20 +2721,41 @@ const store = {
       const fsHasUtrsSnapshot = fsState.utrs !== null;
       const fsHasSmsSnapshot = fsState.smsLogs !== null;
 
-      const utrs = mergeById([fsHasUtrsSnapshot ? [] : getLocalUtrs(), expressState.utrs, fsState.utrs], true)
-        .filter((w) => w && !isRecentlyDeleted(w.username))
-        .map((w) => {
-          const rec = recentlyUpdatedUtrs.get(w.id);
-          if (rec && rec.exp > nowMs && statusScore(rec.status) > statusScore(w.status)) {
-            return { ...w, status: rec.status };
-          }
-          return w;
-        });
-      const activityLogs = mergeById(
-        [fsHasLogsSnapshot ? [] : getLocalActivityLogs(), expressState.activityLogs, fsState.activityLogs],
-        false
-      );
-      const smsLogs = mergeById([fsHasSmsSnapshot ? [] : getLocalSmsLogs(), expressState.smsLogs, fsState.smsLogs], false);
+      const utrs = utrsClearedGuardUntil > nowMs
+        ? []
+        : mergeById([fsHasUtrsSnapshot ? [] : getLocalUtrs(), expressState.utrs, fsState.utrs], true)
+            .filter((w) => w && !isRecentlyDeleted(w.username) && !isDeletedId(recentlyDeletedUtrs, w))
+            .map((w) => {
+              const rec = recentlyUpdatedUtrs.get(w.id);
+              if (rec && rec.exp > nowMs && statusScore(rec.status) > statusScore(w.status)) {
+                return { ...w, status: rec.status };
+              }
+              return w;
+            });
+
+      const activityLogs = logsClearedGuardUntil > nowMs
+        ? []
+        : mergeById(
+            [fsHasLogsSnapshot ? [] : getLocalActivityLogs(), expressState.activityLogs, fsState.activityLogs],
+            false
+          ).filter((l) => l && !isRecentlyDeleted(l.username) && !isDeletedId(recentlyDeletedLogs, l));
+
+      const smsLogs = smsClearedGuardUntil > nowMs
+        ? []
+        : mergeById([fsHasSmsSnapshot ? [] : getLocalSmsLogs(), expressState.smsLogs, fsState.smsLogs], false)
+            .filter((s) => s && !isRecentlyDeleted(s.username) && !isDeletedId(recentlyDeletedSms, s));
+
+      const usersFp = Object.entries(mergedUsers)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([uname, u]) => `${uname}:${u.activated ? 1 : 0}:${u.activationStatus || ''}:${u.rejectionMessage || ''}:${safeNum(u.balance)}:${safeNum(u.commission)}:${Array.isArray(u.transactions) ? u.transactions.length : 0}:${u.accountDetails?.bankName || ''}:${u.autodebitDetails ? 1 : 0}:${u.loginCount || 0}:${u.referredByCode || ''}`)
+        .join(';');
+      const utrsFp = utrs.map((w) => `${w.id}:${w.status}:${w.utr || ''}`).join(';');
+      const logsFp = `${activityLogs.length}:${activityLogs[0]?.id || ''}:${activityLogs[activityLogs.length - 1]?.id || ''}`;
+      const smsFp = `${smsLogs.length}:${smsLogs[0]?.id || ''}:${smsLogs[smsLogs.length - 1]?.id || ''}`;
+      const fp = `${usersFp}##${utrsFp}##${logsFp}##${smsFp}`;
+
+      if (fp === lastDashboardFp) return;
+      lastDashboardFp = fp;
 
       saveLocalUsersMap(mergedUsers);
       saveLocalUtrs(utrs);
@@ -2928,7 +2976,7 @@ const store = {
         sseListeners.add(sseHandler);
       }
 
-      const tick = async () => {
+      const tick = async (force = false) => {
         if (stopped) return;
         const activeCfg = getActiveCloudConfig();
         if (activeCfg.mode === 'rtdb' && activeCfg.rtdbUrl) {
@@ -2943,25 +2991,35 @@ const store = {
           }
           return;
         }
-        if (backendAvailable === true) {
+        if (backendAvailable === true && (force || !sseSource)) {
           await fetchExpressDashboard();
         }
-        if (activeCfg.mode === 'firestore' && (fsDegraded || !fsAttached || (typeof document === 'undefined' || !document.hidden))) {
+        if (activeCfg.mode === 'firestore' && (force || fsDegraded || !fsAttached)) {
           const liveCtx = firestoreContext || (await getFirestoreContext());
           if (liveCtx) {
             if (!fsAttached) {
               void setupFirestore(true);
             } else {
-              await pullFirestoreCollections(liveCtx, true);
+              await pullFirestoreCollections(liveCtx, false);
             }
           }
         }
       };
 
       if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-        void tick();
+        void tick(true);
       }
-      pollTimer = setInterval(() => void tick(), ctx && !fsDegraded ? 6000 : 3000);
+      let pollTickCount = 0;
+      pollTimer = setInterval(() => {
+        pollTickCount += 1;
+        const activeCfg = getActiveCloudConfig();
+        if (activeCfg.mode === 'rtdb' || fsDegraded || !fsAttached) {
+          void tick(false);
+        } else if (pollTickCount % 10 === 0 && (typeof document === 'undefined' || !document.hidden)) {
+          // Gentle 30s reconciliation only; primary real-time updates stream instantaneously via onSnapshot + SSE
+          void tick(true);
+        }
+      }, 3000);
 
       if (typeof window !== 'undefined') {
         onlineHandler = () => {
@@ -3097,14 +3155,6 @@ const store = {
     const utrs = getLocalUtrs();
     let item = utrs.find((u) => u && (u.id === utrId || u.utr === utrId)) || itemHint || null;
 
-    const fsCtx = await getFirestoreContext();
-    if (!item && fsCtx && utrId) {
-      try {
-        const snap = await getDocServerFirst(fsCtx, fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, utrId));
-        if (snap && snap.exists()) item = snap.data();
-      } catch {}
-    }
-
     const resolvedUname = String(uname || item?.username || '').trim();
     const is199 = Boolean(
       item &&
@@ -3117,11 +3167,13 @@ const store = {
 
     if (item) {
       item.status = nextStatus;
-      recentlyUpdatedUtrs.set(item.id || utrId, { status: nextStatus, exp: Date.now() + 8000 });
+      recentlyUpdatedUtrs.set(item.id || utrId, { status: nextStatus, exp: Date.now() + 12000 });
       const idx = utrs.findIndex((u) => u && (u.id === item.id || u.id === utrId));
       if (idx >= 0) utrs[idx] = { ...utrs[idx], status: nextStatus };
       else utrs.unshift({ ...item, status: nextStatus });
       saveLocalUtrs(utrs);
+    } else if (utrId) {
+      recentlyUpdatedUtrs.set(utrId, { status: nextStatus, exp: Date.now() + 12000 });
     }
 
     if (resolvedUname) {
@@ -3148,93 +3200,95 @@ const store = {
 
     broadcastSyncEvent('admin_approve_utr');
 
-    const tasks = [];
-    if (fsCtx) {
-      const targetDocId = sanitizeSafeId(String(item?.id || utrId || ''), 'WTH');
-      const utrNum = String(item?.utr || '').trim();
-      tasks.push(
-        (async () => {
-          try {
-            let updatedAny = false;
-            if (targetDocId) {
-              const utrRef = fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId);
-              const existingUtr = await getDocServerFirst(fsCtx, utrRef);
-              if (existingUtr && existingUtr.exists()) {
-                await fsCtx.fs.updateDoc(utrRef, { status: nextStatus });
-                updatedAny = true;
+    // Non-blocking background cloud & backend synchronization so UI responds instantaneously
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      if (fsCtx) {
+        const targetDocId = sanitizeSafeId(String(item?.id || utrId || ''), 'WTH');
+        const utrNum = String(item?.utr || '').trim();
+        const tasks = [
+          (async () => {
+            try {
+              let updatedAny = false;
+              if (targetDocId) {
+                const utrRef = fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId);
+                try {
+                  await fsCtx.fs.updateDoc(utrRef, { status: nextStatus });
+                  updatedAny = true;
+                } catch {}
               }
-            }
-            if (utrNum) {
-              const qs = await getDocsServerFirst(
-                fsCtx,
-                fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs), fsCtx.fs.where('utr', '==', utrNum))
-              );
-              if (qs && !qs.empty) {
-                for (const d of qs.docs) {
-                  await fsCtx.fs.updateDoc(d.ref, { status: nextStatus });
+              if (!updatedAny && utrNum) {
+                const qs = await fsCtx.fs.getDocs(
+                  fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs), fsCtx.fs.where('utr', '==', utrNum))
+                );
+                if (qs && !qs.empty) {
+                  await Promise.all(qs.docs.map((d) => fsCtx.fs.updateDoc(d.ref, { status: nextStatus })));
                   updatedAny = true;
                 }
               }
+              if (!updatedAny && targetDocId) {
+                const utrRef = fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId);
+                const fullUtr = sanitizeUtrEntry(
+                  item || {
+                    id: targetDocId,
+                    username: resolvedUname || 'user',
+                    type: is199 ? 'Upgrade Limit (₹199)' : 'Activation Payment (₹399)',
+                    amount: is199 ? 199 : 399,
+                    utr: String(utrId || ''),
+                    tokenNumber: String(utrId || ''),
+                  },
+                  targetDocId,
+                  nextStatus
+                );
+                await fsCtx.fs.setDoc(utrRef, fullUtr);
+              }
+            } catch (err) {
+              console.error('Firestore adminApproveUtr UTR write warning:', err);
             }
-            if (!updatedAny && targetDocId) {
-              const utrRef = fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId);
-              const fullUtr = sanitizeUtrEntry(
-                item || {
-                  id: targetDocId,
-                  username: resolvedUname || 'user',
-                  type: is199 ? 'Upgrade Limit (₹199)' : 'Activation Payment (₹399)',
-                  amount: is199 ? 199 : 399,
-                  utr: String(utrId || ''),
-                  tokenNumber: String(utrId || ''),
-                },
-                targetDocId,
-                nextStatus
-              );
-              await fsCtx.fs.setDoc(utrRef, fullUtr);
-            }
-          } catch (err) {
-            console.error('Firestore adminApproveUtr UTR write warning:', err);
+          })(),
+        ];
+        if (resolvedUname) {
+          tasks.push(
+            fsUpsertUser(resolvedUname, {
+              activated: true,
+              activationStatus: 'approved',
+              rejectionMessage: noteMsg,
+            }).catch((err) => {
+              console.error('Firestore adminApproveUtr user activate error:', err);
+            })
+          );
+        }
+        if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
+        tasks.push(
+          apiJson('/api/admin/utr/approve', {
+            method: 'POST',
+            headers: { 'x-admin-token': getStoredAdminToken() },
+            body: JSON.stringify({ utrId, username: resolvedUname, utrRecord: item, message: noteMsg }),
+          })
+        );
+        const cfg = getActiveCloudConfig();
+        if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+          if (item?.id) tasks.push(rtdbFetch(`utrs/${encodeURIComponent(item.id)}`, 'PATCH', { status: nextStatus }));
+          if (resolvedUname) {
+            tasks.push(
+              rtdbFetch(`users/${encodeURIComponent(toDocId(resolvedUname))}`, 'PATCH', {
+                activated: true,
+                activationStatus: 'approved',
+                rejectionMessage: noteMsg,
+              })
+            );
           }
-        })()
-      );
-      if (resolvedUname) {
-        tasks.push(
-          fsUpsertUser(resolvedUname, {
-            activated: true,
-            activationStatus: 'approved',
-            rejectionMessage: noteMsg,
-          }).catch((err) => {
-            console.error('Firestore adminApproveUtr user activate error:', err);
-          })
-        );
+        }
+        await Promise.allSettled(tasks);
+      } else {
+        await apiJson('/api/admin/utr/approve', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+          body: JSON.stringify({ utrId, username: resolvedUname, utrRecord: item, message: noteMsg }),
+        });
       }
-      if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
-    }
+    })();
 
-    tasks.push(
-      apiJson('/api/admin/utr/approve', {
-        method: 'POST',
-        headers: { 'x-admin-token': getStoredAdminToken() },
-        body: JSON.stringify({ utrId, username: resolvedUname, utrRecord: item, message: noteMsg }),
-      })
-    );
-
-    const cfg = getActiveCloudConfig();
-    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      if (item?.id) tasks.push(rtdbFetch(`utrs/${encodeURIComponent(item.id)}`, 'PATCH', { status: nextStatus }));
-      if (resolvedUname) {
-        tasks.push(
-          rtdbFetch(`users/${encodeURIComponent(toDocId(resolvedUname))}`, 'PATCH', {
-            activated: true,
-            activationStatus: 'approved',
-            rejectionMessage: noteMsg,
-          })
-        );
-      }
-    }
-
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('admin_approve_utr');
     return true;
   },
 
@@ -3244,22 +3298,16 @@ const store = {
     let item = utrs.find((u) => u && (u.id === utrId || u.utr === utrId)) || itemHint || null;
     const nextStatus = '❌ Rejected (Invalid UTR)';
 
-    const fsCtx = await getFirestoreContext();
-    if (!item && fsCtx && utrId) {
-      try {
-        const snap = await getDocServerFirst(fsCtx, fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, utrId));
-        if (snap && snap.exists()) item = snap.data();
-      } catch {}
-    }
-
     const resolvedUname = String(uname || item?.username || '').trim();
     if (item) {
       item.status = nextStatus;
-      recentlyUpdatedUtrs.set(item.id || utrId, { status: nextStatus, exp: Date.now() + 8000 });
+      recentlyUpdatedUtrs.set(item.id || utrId, { status: nextStatus, exp: Date.now() + 12000 });
       const idx = utrs.findIndex((u) => u && (u.id === item.id || u.id === utrId));
       if (idx >= 0) utrs[idx] = { ...utrs[idx], status: nextStatus };
       else utrs.unshift({ ...item, status: nextStatus });
       saveLocalUtrs(utrs);
+    } else if (utrId) {
+      recentlyUpdatedUtrs.set(utrId, { status: nextStatus, exp: Date.now() + 12000 });
     }
 
     if (resolvedUname) {
@@ -3278,80 +3326,76 @@ const store = {
 
     broadcastSyncEvent('admin_reject_utr');
 
-    const tasks = [];
-    if (fsCtx) {
-      const targetDocId = sanitizeSafeId(String(item?.id || utrId || ''), 'WTH');
-      const utrNum = String(item?.utr || '').trim();
-      tasks.push(
-        (async () => {
-          try {
-            let updatedAny = false;
-            if (targetDocId) {
-              const utrRef = fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId);
-              const existingUtr = await getDocServerFirst(fsCtx, utrRef);
-              if (existingUtr && existingUtr.exists()) {
-                await fsCtx.fs.updateDoc(utrRef, { status: nextStatus });
-                updatedAny = true;
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      const tasks = [
+        apiJson('/api/admin/utr/reject', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+          body: JSON.stringify({ utrId, username: resolvedUname, utrRecord: item, message: rejectMsg }),
+        }),
+      ];
+      if (fsCtx) {
+        const targetDocId = sanitizeSafeId(String(item?.id || utrId || ''), 'WTH');
+        const utrNum = String(item?.utr || '').trim();
+        tasks.push(
+          (async () => {
+            try {
+              let updatedAny = false;
+              if (targetDocId) {
+                const utrRef = fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId);
+                try {
+                  await fsCtx.fs.updateDoc(utrRef, { status: nextStatus });
+                  updatedAny = true;
+                } catch {}
               }
-            }
-            if (utrNum) {
-              const qs = await getDocsServerFirst(
-                fsCtx,
-                fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs), fsCtx.fs.where('utr', '==', utrNum))
-              );
-              if (qs && !qs.empty) {
-                for (const d of qs.docs) {
-                  await fsCtx.fs.updateDoc(d.ref, { status: nextStatus });
+              if (!updatedAny && utrNum) {
+                const qs = await fsCtx.fs.getDocs(
+                  fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs), fsCtx.fs.where('utr', '==', utrNum))
+                );
+                if (qs && !qs.empty) {
+                  await Promise.all(qs.docs.map((d) => fsCtx.fs.updateDoc(d.ref, { status: nextStatus })));
                   updatedAny = true;
                 }
               }
+              if (!updatedAny && targetDocId && item) {
+                await fsCtx.fs.setDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId), sanitizeUtrEntry(item, targetDocId, nextStatus));
+              }
+            } catch (err) {
+              console.error('Firestore adminRejectUtr UTR write warning:', err);
             }
-            if (!updatedAny && targetDocId && item) {
-              await fsCtx.fs.setDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, targetDocId), sanitizeUtrEntry(item, targetDocId, nextStatus));
-            }
-          } catch (err) {
-            console.error('Firestore adminRejectUtr UTR write warning:', err);
-          }
-        })()
-      );
-      if (resolvedUname) {
-        tasks.push(
-          fsUpsertUser(resolvedUname, {
-            activated: false,
-            activationStatus: 'rejected',
-            rejectionMessage: rejectMsg,
-          }).catch((err) => {
-            console.error('Firestore adminRejectUtr user reject error:', err);
-          })
+          })()
         );
+        if (resolvedUname) {
+          tasks.push(
+            fsUpsertUser(resolvedUname, {
+              activated: false,
+              activationStatus: 'rejected',
+              rejectionMessage: rejectMsg,
+            }).catch((err) => {
+              console.error('Firestore adminRejectUtr user reject error:', err);
+            })
+          );
+        }
+        if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
       }
-      if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
-    }
 
-    tasks.push(
-      apiJson('/api/admin/utr/reject', {
-        method: 'POST',
-        headers: { 'x-admin-token': getStoredAdminToken() },
-        body: JSON.stringify({ utrId, username: resolvedUname, utrRecord: item, message: rejectMsg }),
-      })
-    );
-
-    const cfg = getActiveCloudConfig();
-    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      if (item?.id) tasks.push(rtdbFetch(`utrs/${encodeURIComponent(item.id)}`, 'PATCH', { status: nextStatus }));
-      if (resolvedUname) {
-        tasks.push(
-          rtdbFetch(`users/${encodeURIComponent(toDocId(resolvedUname))}`, 'PATCH', {
-            activated: false,
-            activationStatus: 'rejected',
-            rejectionMessage: rejectMsg,
-          })
-        );
+      const cfg = getActiveCloudConfig();
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        if (item?.id) tasks.push(rtdbFetch(`utrs/${encodeURIComponent(item.id)}`, 'PATCH', { status: nextStatus }));
+        if (resolvedUname) {
+          tasks.push(
+            rtdbFetch(`users/${encodeURIComponent(toDocId(resolvedUname))}`, 'PATCH', {
+              activated: false,
+              activationStatus: 'rejected',
+              rejectionMessage: rejectMsg,
+            })
+          );
+        }
       }
-    }
+      await Promise.allSettled(tasks);
+    })();
 
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('admin_reject_utr');
     return true;
   },
 
@@ -3368,40 +3412,36 @@ const store = {
     const act = pushLocalActivity(uname, 'admin_approve', `Admin approved panel & started transactions${noteMsg ? ` • Note: ${noteMsg}` : ''}`, 'admin', 'success');
     broadcastSyncEvent('admin_approve_user');
 
-    const cfg = getActiveCloudConfig();
-    const tasks = [
-      fsUpsertUser(uname, {
-        activated: true,
-        activationStatus: 'approved',
-        rejectionMessage: noteMsg,
-      }).catch((err) => {
-        console.error('Firestore adminApproveUserPanel error:', err);
-      }),
-      apiJson('/api/admin/approve-user', {
-        method: 'POST',
-        headers: { 'x-admin-token': getStoredAdminToken() },
-        body: JSON.stringify({ username: uname, message: noteMsg }),
-      }).then((res) => {
-        if (res.ok && res.data?.user) {
-          const curUsers = getLocalUsersMap();
-          curUsers[uname] = res.data.user;
-          saveLocalUsersMap(curUsers);
-        }
-      }),
-    ];
-    if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
-    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      tasks.push(
-        rtdbFetch(`users/${encodeURIComponent(toDocId(uname))}`, 'PATCH', {
+    void (async () => {
+      const cfg = getActiveCloudConfig();
+      const tasks = [
+        fsUpsertUser(uname, {
           activated: true,
           activationStatus: 'approved',
           rejectionMessage: noteMsg,
-        })
-      );
-    }
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('admin_approve_user');
-    return getLocalUsersMap()[uname] || null;
+        }).catch((err) => {
+          console.error('Firestore adminApproveUserPanel error:', err);
+        }),
+        apiJson('/api/admin/approve-user', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+          body: JSON.stringify({ username: uname, message: noteMsg }),
+        }),
+      ];
+      if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(
+          rtdbFetch(`users/${encodeURIComponent(toDocId(uname))}`, 'PATCH', {
+            activated: true,
+            activationStatus: 'approved',
+            rejectionMessage: noteMsg,
+          })
+        );
+      }
+      await Promise.allSettled(tasks);
+    })();
+
+    return getLocalUsersMap()[uname] || { username: uname, activated: true, activationStatus: 'approved', rejectionMessage: noteMsg };
   },
 
   async adminRejectUserPayment(uname, customMessage = '') {
@@ -3417,40 +3457,36 @@ const store = {
     const act = pushLocalActivity(uname, 'admin_reject', `Admin rejected payment — ${msg}`, 'admin', 'warning');
     broadcastSyncEvent('admin_reject_user');
 
-    const cfg = getActiveCloudConfig();
-    const tasks = [
-      fsUpsertUser(uname, {
-        activated: false,
-        activationStatus: 'rejected',
-        rejectionMessage: msg,
-      }).catch((err) => {
-        console.error('Firestore adminRejectUserPayment error:', err);
-      }),
-      apiJson('/api/admin/reject-user', {
-        method: 'POST',
-        headers: { 'x-admin-token': getStoredAdminToken() },
-        body: JSON.stringify({ username: uname, message: msg }),
-      }).then((res) => {
-        if (res.ok && res.data?.user) {
-          const curUsers = getLocalUsersMap();
-          curUsers[uname] = res.data.user;
-          saveLocalUsersMap(curUsers);
-        }
-      }),
-    ];
-    if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
-    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      tasks.push(
-        rtdbFetch(`users/${encodeURIComponent(toDocId(uname))}`, 'PATCH', {
+    void (async () => {
+      const cfg = getActiveCloudConfig();
+      const tasks = [
+        fsUpsertUser(uname, {
           activated: false,
           activationStatus: 'rejected',
           rejectionMessage: msg,
-        })
-      );
-    }
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('admin_reject_user');
-    return getLocalUsersMap()[uname] || null;
+        }).catch((err) => {
+          console.error('Firestore adminRejectUserPayment error:', err);
+        }),
+        apiJson('/api/admin/reject-user', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+          body: JSON.stringify({ username: uname, message: msg }),
+        }),
+      ];
+      if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(
+          rtdbFetch(`users/${encodeURIComponent(toDocId(uname))}`, 'PATCH', {
+            activated: false,
+            activationStatus: 'rejected',
+            rejectionMessage: msg,
+          })
+        );
+      }
+      await Promise.allSettled(tasks);
+    })();
+
+    return getLocalUsersMap()[uname] || { username: uname, activated: false, activationStatus: 'rejected', rejectionMessage: msg };
   },
 
   async adminSendUserMessage(uname, message) {
@@ -3475,30 +3511,26 @@ const store = {
     );
     broadcastSyncEvent('admin_user_message');
 
-    const cfg = getActiveCloudConfig();
-    const tasks = [
-      fsUpsertUser(cleanUname, { rejectionMessage: cleanMsg }).catch((err) => {
-        console.error('Firestore adminSendUserMessage error:', err);
-      }),
-      apiJson('/api/admin/user-message', {
-        method: 'POST',
-        headers: { 'x-admin-token': getStoredAdminToken() },
-        body: JSON.stringify({ username: cleanUname, message: cleanMsg }),
-      }).then((res) => {
-        if (res.ok && res.data?.user) {
-          const curUsers = getLocalUsersMap();
-          curUsers[cleanUname] = res.data.user;
-          saveLocalUsersMap(curUsers);
-        }
-      }),
-    ];
-    if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
-    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      tasks.push(rtdbFetch(`users/${encodeURIComponent(toDocId(cleanUname))}`, 'PATCH', { rejectionMessage: cleanMsg }));
-    }
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('admin_user_message');
-    return { success: true, user: getLocalUsersMap()[cleanUname] || null };
+    void (async () => {
+      const cfg = getActiveCloudConfig();
+      const tasks = [
+        fsUpsertUser(cleanUname, { rejectionMessage: cleanMsg }).catch((err) => {
+          console.error('Firestore adminSendUserMessage error:', err);
+        }),
+        apiJson('/api/admin/user-message', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+          body: JSON.stringify({ username: cleanUname, message: cleanMsg }),
+        }),
+      ];
+      if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(rtdbFetch(`users/${encodeURIComponent(toDocId(cleanUname))}`, 'PATCH', { rejectionMessage: cleanMsg }));
+      }
+      await Promise.allSettled(tasks);
+    })();
+
+    return { success: true, user: getLocalUsersMap()[cleanUname] || { username: cleanUname, rejectionMessage: cleanMsg } };
   },
 
   async adminToggleUserActivation(uname, curr) {
@@ -3507,75 +3539,272 @@ const store = {
   },
 
   async adminDeleteUser(uname) {
-    if (uname) recentlyDeletedUsers.set(uname, Date.now() + 15000);
+    const cleanUname = String(uname || '').trim();
+    if (!cleanUname || cleanUname === 'demo') return false;
+    recentlyDeletedUsers.set(cleanUname, Date.now() + 20000);
     const users = getLocalUsersMap();
-    if (users[uname]) {
-      delete users[uname];
+    if (users[cleanUname]) {
+      delete users[cleanUname];
       saveLocalUsersMap(users);
     }
-    saveLocalUtrs(getLocalUtrs().filter((w) => w && w.username !== uname));
+    saveLocalUtrs(getLocalUtrs().filter((w) => w && w.username !== cleanUname));
+    saveLocalActivityLogs(getLocalActivityLogs().filter((l) => l && l.username !== cleanUname));
+    saveLocalSmsLogs(getLocalSmsLogs().filter((s) => s && s.username !== cleanUname));
     broadcastSyncEvent('admin_delete_user');
 
-    const fsCtx = await getFirestoreContext();
-    const cfg = getActiveCloudConfig();
-    const tasks = [
-      apiJson('/api/admin/delete-user', {
-        method: 'POST',
-        headers: { 'x-admin-token': getStoredAdminToken() },
-        body: JSON.stringify({ username: uname }),
-      }),
-    ];
-    if (fsCtx && uname) {
-      const docId = toDocId(uname);
-      tasks.push(
-        fsCtx.fs.deleteDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.users, docId)).catch(() => {})
-      );
-      tasks.push(
-        fsCtx.fs
-          .getDocs(fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.users), fsCtx.fs.where('username', '==', uname)))
-          .then((uSnap) => Promise.all(uSnap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref))))
-          .catch(() => {})
-      );
-      tasks.push(
-        fsCtx.fs
-          .getDocs(fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs), fsCtx.fs.where('username', '==', uname)))
-          .then((uSnap) => Promise.all(uSnap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref))))
-          .catch(() => {})
-      );
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      const cfg = getActiveCloudConfig();
+      const tasks = [
+        apiJson('/api/admin/delete-user', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+          body: JSON.stringify({ username: cleanUname }),
+        }),
+      ];
+      if (fsCtx) {
+        const docId = toDocId(cleanUname);
+        tasks.push(
+          fsCtx.fs.deleteDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.users, docId)).catch(() => {}),
+          fsCtx.fs
+            .getDocs(fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.users), fsCtx.fs.where('username', '==', cleanUname)))
+            .then((uSnap) => Promise.all(uSnap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref))))
+            .catch(() => {}),
+          fsCtx.fs
+            .getDocs(fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs), fsCtx.fs.where('username', '==', cleanUname)))
+            .then((uSnap) => Promise.all(uSnap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref))))
+            .catch(() => {}),
+          fsCtx.fs
+            .getDocs(fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.activityLogs), fsCtx.fs.where('username', '==', cleanUname)))
+            .then((uSnap) => Promise.all(uSnap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref))))
+            .catch(() => {}),
+          fsCtx.fs
+            .getDocs(fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.smsLogs), fsCtx.fs.where('username', '==', cleanUname)))
+            .then((uSnap) => Promise.all(uSnap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref))))
+            .catch(() => {})
+        );
+      }
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(rtdbFetch(`users/${encodeURIComponent(toDocId(cleanUname))}`, 'DELETE'));
+      }
+      await Promise.allSettled(tasks);
+    })();
+
+    return true;
+  },
+
+  async adminDeleteUtr(utrId, itemHint = null) {
+    const cleanId = String(utrId || itemHint?.id || '').trim();
+    if (!cleanId) return false;
+    const exp = Date.now() + 20000;
+    recentlyDeletedUtrs.set(cleanId, exp);
+    if (itemHint?.utr) recentlyDeletedUtrs.set(String(itemHint.utr), exp);
+
+    saveLocalUtrs(getLocalUtrs().filter((w) => w && w.id !== cleanId && w.utr !== cleanId));
+    broadcastSyncEvent('admin_delete_utr');
+
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      const cfg = getActiveCloudConfig();
+      const tasks = [
+        apiJson('/api/admin/utr/delete', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+          body: JSON.stringify({ utrId: cleanId }),
+        }),
+      ];
+      if (fsCtx) {
+        const docId = sanitizeSafeId(cleanId, 'WTH');
+        tasks.push(fsCtx.fs.deleteDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, docId)).catch(() => {}));
+        const utrNum = String(itemHint?.utr || '').trim();
+        if (utrNum) {
+          tasks.push(
+            fsCtx.fs
+              .getDocs(fsCtx.fs.query(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs), fsCtx.fs.where('utr', '==', utrNum)))
+              .then((snap) => Promise.all(snap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref))))
+              .catch(() => {})
+          );
+        }
+      }
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(rtdbFetch(`utrs/${encodeURIComponent(cleanId)}`, 'DELETE'));
+      }
+      await Promise.allSettled(tasks);
+    })();
+    return true;
+  },
+
+  async adminClearUtrs(mode = 'rejected') {
+    const cleanMode = mode === 'all' ? 'all' : 'rejected';
+    const current = getLocalUtrs();
+    const exp = Date.now() + 20000;
+    if (cleanMode === 'all') {
+      utrsClearedGuardUntil = exp;
+      current.forEach((w) => w?.id && recentlyDeletedUtrs.set(w.id, exp));
+      saveLocalUtrs([]);
+    } else {
+      const keep = [];
+      current.forEach((w) => {
+        if (!w) return;
+        if (String(w.status || '').toLowerCase().includes('rejected')) {
+          if (w.id) recentlyDeletedUtrs.set(w.id, exp);
+        } else {
+          keep.push(w);
+        }
+      });
+      saveLocalUtrs(keep);
     }
-    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      tasks.push(rtdbFetch(`users/${encodeURIComponent(toDocId(uname))}`, 'DELETE'));
-    }
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('admin_delete_user');
+    broadcastSyncEvent('admin_clear_utrs');
+
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      const cfg = getActiveCloudConfig();
+      const tasks = [
+        apiJson('/api/admin/utr/clear', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+          body: JSON.stringify({ mode: cleanMode }),
+        }),
+      ];
+      if (fsCtx) {
+        tasks.push(
+          fsCtx.fs
+            .getDocs(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.utrs))
+            .then((snap) =>
+              Promise.all(
+                snap.docs
+                  .filter((d) => {
+                    if (cleanMode === 'all') return true;
+                    const s = String(d.data()?.status || '').toLowerCase();
+                    return s.includes('rejected');
+                  })
+                  .map((d) => fsCtx.fs.deleteDoc(d.ref))
+              )
+            )
+            .catch(() => {})
+        );
+      }
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl && cleanMode === 'all') {
+        tasks.push(rtdbFetch('utrs', 'DELETE'));
+      }
+      await Promise.allSettled(tasks);
+    })();
+    return true;
+  },
+
+  async adminDeleteActivityLog(logId) {
+    const cleanId = String(logId || '').trim();
+    if (!cleanId) return false;
+    recentlyDeletedLogs.set(cleanId, Date.now() + 20000);
+    saveLocalActivityLogs(getLocalActivityLogs().filter((l) => l && l.id !== cleanId));
+    broadcastSyncEvent('admin_delete_log');
+
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      const cfg = getActiveCloudConfig();
+      const tasks = [
+        apiJson('/api/admin/activity/delete', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+          body: JSON.stringify({ logId: cleanId }),
+        }),
+      ];
+      if (fsCtx) {
+        tasks.push(fsCtx.fs.deleteDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.activityLogs, cleanId)).catch(() => {}));
+      }
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(rtdbFetch(`activityLogs/${encodeURIComponent(cleanId)}`, 'DELETE'));
+      }
+      await Promise.allSettled(tasks);
+    })();
     return true;
   },
 
   async adminClearLogs() {
+    logsClearedGuardUntil = Date.now() + 20000;
     saveLocalActivityLogs([]);
     broadcastSyncEvent('admin_clear_logs');
 
-    const fsCtx = await getFirestoreContext();
-    const cfg = getActiveCloudConfig();
-    const tasks = [
-      apiJson('/api/admin/clear-logs', {
-        method: 'POST',
-        headers: { 'x-admin-token': getStoredAdminToken() },
-      }),
-    ];
-    if (fsCtx) {
-      tasks.push(
-        fsCtx.fs
-          .getDocs(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.activityLogs))
-          .then((snap) => Promise.all(snap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref))))
-          .catch(() => {})
-      );
-    }
-    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      tasks.push(rtdbFetch('activityLogs', 'DELETE'));
-    }
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('admin_clear_logs');
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      const cfg = getActiveCloudConfig();
+      const tasks = [
+        apiJson('/api/admin/clear-logs', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+        }),
+      ];
+      if (fsCtx) {
+        tasks.push(
+          fsCtx.fs
+            .getDocs(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.activityLogs))
+            .then((snap) => Promise.all(snap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref))))
+            .catch(() => {})
+        );
+      }
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(rtdbFetch('activityLogs', 'DELETE'));
+      }
+      await Promise.allSettled(tasks);
+    })();
+    return true;
+  },
+
+  async adminDeleteSmsLog(smsId) {
+    const cleanId = String(smsId || '').trim();
+    if (!cleanId) return false;
+    recentlyDeletedSms.set(cleanId, Date.now() + 20000);
+    saveLocalSmsLogs(getLocalSmsLogs().filter((s) => s && s.id !== cleanId));
+    broadcastSyncEvent('admin_delete_sms');
+
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      const cfg = getActiveCloudConfig();
+      const tasks = [
+        apiJson('/api/admin/sms/delete', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+          body: JSON.stringify({ smsId: cleanId }),
+        }),
+      ];
+      if (fsCtx) {
+        tasks.push(fsCtx.fs.deleteDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.smsLogs, cleanId)).catch(() => {}));
+      }
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(rtdbFetch(`smsLogs/${encodeURIComponent(cleanId)}`, 'DELETE'));
+      }
+      await Promise.allSettled(tasks);
+    })();
+    return true;
+  },
+
+  async adminClearSmsLogs() {
+    smsClearedGuardUntil = Date.now() + 20000;
+    saveLocalSmsLogs([]);
+    broadcastSyncEvent('admin_clear_sms');
+
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      const cfg = getActiveCloudConfig();
+      const tasks = [
+        apiJson('/api/admin/clear-sms', {
+          method: 'POST',
+          headers: { 'x-admin-token': getStoredAdminToken() },
+        }),
+      ];
+      if (fsCtx) {
+        tasks.push(
+          fsCtx.fs
+            .getDocs(fsCtx.fs.collection(fsCtx.db, COLLECTIONS.smsLogs))
+            .then((snap) => Promise.all(snap.docs.map((d) => fsCtx.fs.deleteDoc(d.ref))))
+            .catch(() => {})
+        );
+      }
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(rtdbFetch('smsLogs', 'DELETE'));
+      }
+      await Promise.allSettled(tasks);
+    })();
     return true;
   },
 

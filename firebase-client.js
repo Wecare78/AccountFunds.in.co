@@ -1257,7 +1257,10 @@ const store = {
           const ctx = await getFirestoreContext();
           if (ctx) {
             const q = ctx.fs.query(ctx.fs.collection(ctx.db, COLLECTIONS.users), ctx.fs.where('referralCode', '==', enteredRefCode));
-            const qs = await getDocsServerFirst(ctx, q);
+            const qs = await Promise.race([
+              getDocsServerFirst(ctx, q),
+              new Promise((r) => setTimeout(() => r(null), 850)),
+            ]);
             if (qs && !qs.empty) {
               const refDoc = qs.docs[0].data();
               if (refDoc && refDoc.username && refDoc.username !== uname) {
@@ -1323,23 +1326,24 @@ const store = {
     const act = pushLocalActivity(uname, 'register', `New user registered with OTP verified mobile +91 ${cleanMobile}${refNote}`, 'registration', 'success', cleanMobile);
     broadcastSyncEvent('register');
 
-    const fsCtx = await getFirestoreContext();
-    const cfg = getActiveCloudConfig();
-    const tasks = [];
-    if (fsCtx) {
-      tasks.push(
-        fsCtx.fs.setDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.users, docId), newUser).catch((err) => {
-          console.error('Firestore registerUser error:', err);
-        })
-      );
-      if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
-    }
-    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      tasks.push(rtdbFetch(`users/${encodeURIComponent(docId)}`, 'PUT', newUser));
-      if (act) tasks.push(rtdbFetch(`activityLogs/${encodeURIComponent(act.id)}`, 'PUT', act));
-    }
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('register');
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      const cfg = getActiveCloudConfig();
+      const tasks = [];
+      if (fsCtx) {
+        tasks.push(
+          fsCtx.fs.setDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.users, docId), newUser).catch((err) => {
+            console.error('Firestore registerUser error:', err);
+          })
+        );
+        if (act) tasks.push(fsCreateActivity(act).catch(() => {}));
+      }
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(rtdbFetch(`users/${encodeURIComponent(docId)}`, 'PUT', newUser));
+        if (act) tasks.push(rtdbFetch(`activityLogs/${encodeURIComponent(act.id)}`, 'PUT', act));
+      }
+      await Promise.allSettled(tasks);
+    })();
 
     return {
       success: true,
@@ -1383,7 +1387,7 @@ const store = {
             fsCreateActivity(loginAct).catch((err) => console.error('Firestore loginUser activity warning:', err))
           );
         }
-        await Promise.allSettled(fsSyncTasks);
+        void Promise.allSettled(fsSyncTasks);
         return {
           success: true,
           username: res.data.username || res.data.user.username,
@@ -1497,7 +1501,7 @@ const store = {
       );
       if (act) syncTasks.push(rtdbFetch(`activityLogs/${encodeURIComponent(act.id)}`, 'PUT', act));
     }
-    await Promise.allSettled(syncTasks);
+    void Promise.allSettled(syncTasks);
 
     return {
       success: true,
@@ -1789,7 +1793,7 @@ const store = {
       pollTimer = setInterval(() => {
         pollTickCount += 1;
         const isRtdb = getActiveCloudConfig().mode === 'rtdb';
-        if (isRtdb || !fsLiveHealthy || pollTickCount % 4 === 0) {
+        if (isRtdb || !fsLiveHealthy || pollTickCount % 8 === 0) {
           void tick(false);
         }
       }, 3000);
@@ -1971,7 +1975,7 @@ const store = {
       pollTimer = setInterval(() => {
         pollTickCount += 1;
         const isRtdb = getActiveCloudConfig().mode === 'rtdb';
-        if (isRtdb || !fsLiveHealthy || pollTickCount % 4 === 0) {
+        if (isRtdb || !fsLiveHealthy || pollTickCount % 8 === 0) {
           void tick(false);
         }
       }, 3000);
@@ -2069,8 +2073,9 @@ const store = {
       cb(list);
     };
 
-    const emitLocal = () => {
-      if (!stopped) mergeAndEmit();
+    const emitLocal = (reason = 'update') => {
+      if (stopped || reason === 'transaction' || reason === 'activity') return;
+      mergeAndEmit();
     };
     localListeners.add(emitLocal);
     emitLocal();
@@ -2236,8 +2241,7 @@ const store = {
       tasks.push(rtdbFetch(`users/${encodeURIComponent(toDocId(u))}`, 'PATCH', userPatch));
       if (act) tasks.push(rtdbFetch(`activityLogs/${encodeURIComponent(act.id)}`, 'PUT', act));
     }
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('bank_details');
+    void Promise.allSettled(tasks);
     return true;
   },
 
@@ -2280,8 +2284,7 @@ const store = {
       tasks.push(rtdbFetch(`users/${encodeURIComponent(toDocId(u))}`, 'PATCH', { autodebitDetails: sanitized }));
       if (act) tasks.push(rtdbFetch(`activityLogs/${encodeURIComponent(act.id)}`, 'PUT', act));
     }
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('autodebit');
+    void Promise.allSettled(tasks);
     return true;
   },
 
@@ -2312,7 +2315,6 @@ const store = {
       if (payload.activationCode) users[uname].activationCode = String(payload.activationCode).slice(0, 32);
       saveLocalUsersMap(users);
     }
-    broadcastSyncEvent(isBonusWithdraw ? 'bonus_withdraw' : 'utr_submitted');
 
     const act = pushLocalActivity(
       uname,
@@ -2321,68 +2323,70 @@ const store = {
       isBonusWithdraw ? 'bonus' : 'payment',
       isBonusWithdraw ? 'success' : 'info'
     );
+    broadcastSyncEvent(isBonusWithdraw ? 'bonus_withdraw' : 'utr_submitted');
 
-    const fsCtx = await getFirestoreContext();
-    const cfg = getActiveCloudConfig();
-    const tasks = [];
+    void (async () => {
+      const fsCtx = firestoreContext || (await getFirestoreContext());
+      const cfg = getActiveCloudConfig();
+      const tasks = [];
 
-    if (fsCtx) {
+      if (fsCtx) {
+        tasks.push(
+          fsCtx.fs.setDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, entry.id), entry).catch((err) => {
+            console.error('Firestore submitUtrRecord UTR error:', err);
+          })
+        );
+        if (shouldSetPending) {
+          tasks.push(
+            fsUpsertUser(uname, {
+              activated: false,
+              activationStatus: 'pending_approval',
+              rejectionMessage: '',
+              ...(payload.activationCode ? { activationCode: String(payload.activationCode).slice(0, 32) } : {}),
+            }).catch((err) => {
+              console.error('Firestore submitUtrRecord user error:', err);
+            })
+          );
+        }
+        if (act) {
+          tasks.push(
+            fsCreateActivity(act).catch((err) => {
+              console.error('Firestore submitUtrRecord activity error:', err);
+            })
+          );
+        }
+      }
+
       tasks.push(
-        fsCtx.fs.setDoc(fsCtx.fs.doc(fsCtx.db, COLLECTIONS.utrs, entry.id), entry).catch((err) => {
-          console.error('Firestore submitUtrRecord UTR error:', err);
+        apiJson('/api/users/utr', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: uname,
+            record: entry,
+            activationCode: payload.activationCode,
+            actionType: payload.actionType,
+            activityText: payload.activityText,
+          }),
         })
       );
-      if (shouldSetPending) {
-        tasks.push(
-          fsUpsertUser(uname, {
-            activated: false,
-            activationStatus: 'pending_approval',
-            rejectionMessage: '',
-            ...(payload.activationCode ? { activationCode: String(payload.activationCode).slice(0, 32) } : {}),
-          }).catch((err) => {
-            console.error('Firestore submitUtrRecord user error:', err);
-          })
-        );
-      }
-      if (act) {
-        tasks.push(
-          fsCreateActivity(act).catch((err) => {
-            console.error('Firestore submitUtrRecord activity error:', err);
-          })
-        );
-      }
-    }
 
-    tasks.push(
-      apiJson('/api/users/utr', {
-        method: 'POST',
-        body: JSON.stringify({
-          username: uname,
-          record: entry,
-          activationCode: payload.activationCode,
-          actionType: payload.actionType,
-          activityText: payload.activityText,
-        }),
-      })
-    );
-
-    if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
-      tasks.push(rtdbFetch(`utrs/${encodeURIComponent(entry.id)}`, 'PUT', entry));
-      if (shouldSetPending) {
-        tasks.push(
-          rtdbFetch(`users/${encodeURIComponent(toDocId(uname))}`, 'PATCH', {
-            activated: false,
-            activationStatus: 'pending_approval',
-            rejectionMessage: '',
-            ...(payload.activationCode ? { activationCode: String(payload.activationCode).slice(0, 32) } : {}),
-          })
-        );
+      if (cfg.mode === 'rtdb' && cfg.rtdbUrl) {
+        tasks.push(rtdbFetch(`utrs/${encodeURIComponent(entry.id)}`, 'PUT', entry));
+        if (shouldSetPending) {
+          tasks.push(
+            rtdbFetch(`users/${encodeURIComponent(toDocId(uname))}`, 'PATCH', {
+              activated: false,
+              activationStatus: 'pending_approval',
+              rejectionMessage: '',
+              ...(payload.activationCode ? { activationCode: String(payload.activationCode).slice(0, 32) } : {}),
+            })
+          );
+        }
+        if (act) tasks.push(rtdbFetch(`activityLogs/${encodeURIComponent(act.id)}`, 'PUT', act));
       }
-      if (act) tasks.push(rtdbFetch(`activityLogs/${encodeURIComponent(act.id)}`, 'PUT', act));
-    }
 
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent(isBonusWithdraw ? 'bonus_withdraw' : 'utr_submitted');
+      await Promise.allSettled(tasks);
+    })();
     return entry;
   },
 
@@ -2423,8 +2427,7 @@ const store = {
     if (cfg.mode === 'rtdb' && cfg.rtdbUrl && Object.keys(patch).length > 0) {
       tasks.push(rtdbFetch(`users/${encodeURIComponent(toDocId(u))}`, 'PATCH', patch));
     }
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent(alreadyApproved ? 'activation_already_approved' : 'activation_pending');
+    void Promise.allSettled(tasks);
     return true;
   },
 
@@ -2529,7 +2532,7 @@ const store = {
         tasks.push(rtdbFetch(`activityLogs/${encodeURIComponent(act.id)}`, 'PUT', act));
       }
     }
-    await Promise.allSettled(tasks);
+    void Promise.allSettled(tasks);
     return true;
   },
 
@@ -2586,8 +2589,7 @@ const store = {
       tasks.push(rtdbFetch(`users/${encodeURIComponent(toDocId(u))}`, 'PATCH', resetPatch));
       if (act) tasks.push(rtdbFetch(`activityLogs/${encodeURIComponent(act.id)}`, 'PUT', act));
     }
-    await Promise.allSettled(tasks);
-    broadcastSyncEvent('bank_removed');
+    void Promise.allSettled(tasks);
     return true;
   },
 

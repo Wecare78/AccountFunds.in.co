@@ -3385,7 +3385,7 @@ if (document.getElementById('registerForm')) {
                     loginUserEl.focus();
                 }
                 showAppToast('✓ Registered! Please enter your mobile/username & password to login.', 'success');
-            }, 650);
+            }, 200);
         });
     }
 
@@ -3443,7 +3443,7 @@ if (document.getElementById('registerForm')) {
                 }
                 setTimeout(() => {
                     window.location.href = 'dashboard.html';
-                }, 400);
+                }, 120);
             } else {
                 flashInlineMessage(messageDiv, (fbResult && fbResult.message) || 'Invalid username or password!', 'message error', 2800);
             }
@@ -4016,6 +4016,8 @@ if (document.getElementById('welcomeMessage')) {
         viewBtn.onclick = null;
     }
 
+    let lastApprovalGateSig = '';
+
     function renderApprovalGateUI(userObj, userUtrs = latestUserUtrs) {
         const status = userObj
             ? (userObj.activationStatus === 'rejected'
@@ -4046,6 +4048,27 @@ if (document.getElementById('welcomeMessage')) {
             currentSecId === 'bonusReceiptSection' ||
             currentSecId === 'referralPageSection' ||
             currentSecId === 'referralWithdrawSection';
+
+        const approvedUpgradeObj = status === 'approved' ? getLatestApprovedUpgrade199Utr(userUtrs) : null;
+        const gateSig = [
+            status,
+            adminReply,
+            hideBannerOnSection ? '1' : '0',
+            latestUtr?.id || '',
+            latestUtr?.status || '',
+            utrDisplay,
+            isUpgrade199 ? '1' : '0',
+            approvedUpgradeObj?.id || '',
+            accDetails.bankName || '',
+            accDetails.ifscCode || '',
+            accDetails.accountNumber || '',
+            accDetails.accountHolder || ''
+        ].join('|');
+
+        if (gateSig === lastApprovalGateSig) {
+            return;
+        }
+        lastApprovalGateSig = gateSig;
 
         if (bannerEl) {
             if (status === 'pending_approval') {
@@ -4636,7 +4659,7 @@ if (document.getElementById('welcomeMessage')) {
             if (!hasApproved199Withdrawal(loggedInUser, latestUserUtrs)) {
                 showBonusStatusPopup({
                     title: 'Withdrawal Pending',
-                    message: 'KINDLY COMPLETE THE WITHDRAWL AND WITHDRAW BONUS ONSPOT',
+                    message: 'KINDLY COMPLETE THE RUNNING PROCESS AND WITHDRAW BONUS ONSPOT',
                     icon: '⏳',
                     durationMs: 5500
                 });
@@ -4723,6 +4746,8 @@ if (document.getElementById('welcomeMessage')) {
         if (!bankSlot) return;
         const accDetails = StorageManager.getAccountDetails(loggedInUser) || {};
         const resolvedName = (rawBankName || accDetails.bankName || 'Linked Bank').trim();
+        if (bankSlot.dataset.bankSig === resolvedName) return;
+        bankSlot.dataset.bankSig = resolvedName;
         const brand = getBankBrandInfo(resolvedName);
         bankSlot.setAttribute('title', brand.bankName);
         bankSlot.innerHTML = renderBankLogoImgHtml(brand);
@@ -4741,10 +4766,15 @@ if (document.getElementById('welcomeMessage')) {
         const txEl = document.getElementById('totalTransactions');
         const settledPaymentEl = document.getElementById('runningTotalDebits');
 
-        if (balanceEl) balanceEl.textContent = `₹${Number(balance).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-        if (commissionEl) commissionEl.textContent = `₹${Number(commission).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-        if (txEl) txEl.textContent = `${txList.length}`;
-        if (settledPaymentEl) settledPaymentEl.textContent = `₹${Number(totalCredits).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+        const balStr = `₹${Number(balance).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+        const comStr = `₹${Number(commission).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+        const txStr = `${txList.length}`;
+        const settledStr = `₹${Number(totalCredits).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+        if (balanceEl && balanceEl.textContent !== balStr) balanceEl.textContent = balStr;
+        if (commissionEl && commissionEl.textContent !== comStr) commissionEl.textContent = comStr;
+        if (txEl && txEl.textContent !== txStr) txEl.textContent = txStr;
+        if (settledPaymentEl && settledPaymentEl.textContent !== settledStr) settledPaymentEl.textContent = settledStr;
         updateSettledPaymentTransferVisual();
     }
 

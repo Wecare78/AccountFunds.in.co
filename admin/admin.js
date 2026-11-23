@@ -1013,6 +1013,84 @@ function initAdminPortal() {
     let currentPeriodFilter = 'all';
     let currentSearchTerm = '';
     let currentUtrFilter = 'all';
+    let currentRefFilter = 'all';
+    let selectedReferrerUsername = '';
+    let showAllActivityLogs = false;
+
+    const getFbStoreFast = () => (window.FirebaseStore ? Promise.resolve(window.FirebaseStore) : getFirebaseStore());
+
+    function escapeHtmlSafe(val) {
+        return String(val ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function generateAdminReferralCode(username) {
+        const clean = String(username || '').trim();
+        const alpha = clean.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3).padEnd(3, 'X');
+        let h = 2166136261;
+        const seed = clean.toLowerCase();
+        for (let i = 0; i < seed.length; i++) {
+            h ^= seed.charCodeAt(i);
+            h = Math.imul(h, 16777619);
+        }
+        const suffix = (h >>> 0).toString(36).toUpperCase().replace(/[^A-Z0-9]/g, '').padStart(5, '0').slice(-5);
+        return `AF${alpha}${suffix}`.slice(0, 12);
+    }
+
+    function isUserActivatedForReferral(rec) {
+        if (!rec) return false;
+        if (rec.activationStatus === 'approved') return true;
+        return Boolean(rec.activated === true && rec.activationStatus !== 'rejected' && rec.activationStatus !== 'pending_approval');
+    }
+
+    function buildReferralStatsMap(usersObj) {
+        const userList = Object.values(usersObj || {}).filter((u) => u && u.username && u.username !== 'demo');
+        const map = new Map();
+        userList.forEach((u) => {
+            const code = String(u.referralCode || generateAdminReferralCode(u.username)).trim().toUpperCase();
+            map.set(u.username, {
+                owner: u,
+                code,
+                referredUsers: [],
+                activatedCount: 0,
+                pendingCount: 0,
+                bonusEarned: 0,
+            });
+        });
+
+        userList.forEach((candidate) => {
+            const refCode = String(candidate.referredByCode || '').trim().toUpperCase();
+            const refName = String(candidate.referredBy || '').trim().toLowerCase();
+            if (!refCode && !refName) return;
+
+            for (const [ownerName, entry] of map.entries()) {
+                if (ownerName === candidate.username) continue;
+                const matchByCode = refCode && entry.code === refCode;
+                const matchByName = refName && ownerName.toLowerCase() === refName;
+                if (matchByCode || matchByName) {
+                    entry.referredUsers.push(candidate);
+                    if (isUserActivatedForReferral(candidate)) {
+                        entry.activatedCount += 1;
+                    } else {
+                        entry.pendingCount += 1;
+                    }
+                    break;
+                }
+            }
+        });
+
+        for (const entry of map.values()) {
+            entry.referredUsers.sort(
+                (a, b) => new Date(b.registeredAt || 0).getTime() - new Date(a.registeredAt || 0).getTime()
+            );
+            entry.bonusEarned = entry.activatedCount * 699;
+        }
+        return map;
+    }
 
     const filterTodayBtn = document.getElementById('filterTodayBtn');
     const filterAllBtn = document.getElementById('filterAllBtn');
@@ -1020,14 +1098,70 @@ function initAdminPortal() {
     const searchClear = document.getElementById('adminSearchClear');
     const refreshBtn = document.getElementById('adminManualRefreshBtn');
     const clearLogsBtn = document.getElementById('adminClearLogsBtn');
+    const clearRejectedUtrsBtn = document.getElementById('adminClearRejectedUtrsBtn');
+    const clearAllUtrsBtn = document.getElementById('adminClearAllUtrsBtn');
+    const clearSmsBtn = document.getElementById('adminClearSmsBtn');
+    const activityShowAllBtn = document.getElementById('activityShowAllBtn');
     const exportJsonBtn = document.getElementById('adminExportJsonBtn');
     const utrFilterBar = document.getElementById('utrStatusFilterBar');
+    const referralFilterBar = document.getElementById('referralFilterBar');
+
+    const confirmModalEl = document.getElementById('adminConfirmModal');
+    const confirmModalTitleEl = document.getElementById('confirmModalTitle');
+    const confirmModalMsgEl = document.getElementById('confirmModalMessage');
+    const confirmModalOkBtn = document.getElementById('confirmModalOkBtn');
+    const confirmModalCancelBtn = document.getElementById('confirmModalCancelBtn');
+    const closeConfirmModalBtn = document.getElementById('closeConfirmModalBtn');
+    let pendingConfirmCallback = null;
+
+    function closeAdminConfirm() {
+        if (confirmModalEl) confirmModalEl.style.display = 'none';
+        pendingConfirmCallback = null;
+    }
+
+    function showAdminConfirm({ title = 'Confirm Action', message = 'Are you sure?', okText = 'Delete Now', onConfirm }) {
+        if (!confirmModalEl || !confirmModalOkBtn) {
+            if (typeof onConfirm === 'function') onConfirm();
+            return;
+        }
+        if (confirmModalTitleEl) confirmModalTitleEl.textContent = title;
+        if (confirmModalMsgEl) confirmModalMsgEl.textContent = message;
+        confirmModalOkBtn.textContent = okText;
+        pendingConfirmCallback = onConfirm;
+        confirmModalEl.style.display = 'flex';
+    }
+
+    if (confirmModalOkBtn) {
+        confirmModalOkBtn.addEventListener('click', () => {
+            const fn = pendingConfirmCallback;
+            closeAdminConfirm();
+            if (typeof fn === 'function') fn();
+        });
+    }
+    if (confirmModalCancelBtn) confirmModalCancelBtn.addEventListener('click', closeAdminConfirm);
+    if (closeConfirmModalBtn) closeConfirmModalBtn.addEventListener('click', closeAdminConfirm);
+    if (confirmModalEl) {
+        confirmModalEl.addEventListener('click', (e) => {
+            if (e.target === confirmModalEl) closeAdminConfirm();
+        });
+    }
 
     if (utrFilterBar) {
         utrFilterBar.querySelectorAll('[data-utr-filter]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 currentUtrFilter = btn.getAttribute('data-utr-filter') || 'all';
                 utrFilterBar.querySelectorAll('[data-utr-filter]').forEach((b) => b.classList.remove('active'));
+                btn.classList.add('active');
+                renderAdminDashboard();
+            });
+        });
+    }
+
+    if (referralFilterBar) {
+        referralFilterBar.querySelectorAll('[data-ref-filter]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                currentRefFilter = btn.getAttribute('data-ref-filter') || 'all';
+                referralFilterBar.querySelectorAll('[data-ref-filter]').forEach((b) => b.classList.remove('active'));
                 btn.classList.add('active');
                 renderAdminDashboard();
             });
@@ -1042,14 +1176,15 @@ function initAdminPortal() {
     const adminTabBtns = document.querySelectorAll('.admin-tab-btn');
     const adminTabPanels = document.querySelectorAll('.admin-tab-panel');
 
+    function switchAdminTab(tabId) {
+        adminTabBtns.forEach((b) => b.classList.toggle('active', b.getAttribute('data-tab') === tabId));
+        adminTabPanels.forEach((p) => p.classList.toggle('active', p.id === `tab-${tabId}`));
+    }
+
     adminTabBtns.forEach((btn) => {
         btn.addEventListener('click', () => {
             const tabId = btn.getAttribute('data-tab');
-            adminTabBtns.forEach((b) => b.classList.remove('active'));
-            adminTabPanels.forEach((p) => p.classList.remove('active'));
-            btn.classList.add('active');
-            const targetPanel = document.getElementById(`tab-${tabId}`);
-            if (targetPanel) targetPanel.classList.add('active');
+            switchAdminTab(tabId);
         });
     });
 
@@ -1120,15 +1255,85 @@ function initAdminPortal() {
     }
 
     if (clearLogsBtn) {
-        clearLogsBtn.addEventListener('click', async () => {
-            if (latestAdminData) {
-                latestAdminData.activityLogs = [];
-                renderAdminDashboard();
-            }
-            StorageManager.clearActivityLogs();
-            const fb = await getFirebaseStore();
-            if (fb) await fb.adminClearLogs();
-            showAdminToast('✓ Activity audit logs cleared');
+        clearLogsBtn.addEventListener('click', () => {
+            showAdminConfirm({
+                title: 'Clear All Activity Logs?',
+                message: 'This will remove all activity audit logs from the admin panel and cloud database immediately.',
+                okText: 'Clear All Logs',
+                onConfirm: () => {
+                    if (latestAdminData) {
+                        latestAdminData.activityLogs = [];
+                        renderAdminDashboard();
+                    }
+                    StorageManager.clearActivityLogs();
+                    showAdminToast('✓ Activity audit logs cleared');
+                    void getFbStoreFast().then((fb) => fb && typeof fb.adminClearLogs === 'function' && fb.adminClearLogs());
+                },
+            });
+        });
+    }
+
+    if (clearRejectedUtrsBtn) {
+        clearRejectedUtrsBtn.addEventListener('click', () => {
+            showAdminConfirm({
+                title: 'Clear Rejected UTRs?',
+                message: 'All rejected UTR entries will be deleted immediately while pending and verified UTRs remain intact.',
+                okText: 'Clear Rejected',
+                onConfirm: () => {
+                    if (latestAdminData) {
+                        latestAdminData.withdrawals = (latestAdminData.withdrawals || []).filter(
+                            (w) => !String(w?.status || '').toLowerCase().includes('rejected')
+                        );
+                        renderAdminDashboard();
+                    }
+                    showAdminToast('✓ Rejected UTR records cleared');
+                    void getFbStoreFast().then((fb) => fb && typeof fb.adminClearUtrs === 'function' && fb.adminClearUtrs('rejected'));
+                },
+            });
+        });
+    }
+
+    if (clearAllUtrsBtn) {
+        clearAllUtrsBtn.addEventListener('click', () => {
+            showAdminConfirm({
+                title: 'Delete All UTR & Withdrawal Records?',
+                message: 'Every UTR and withdrawal entry in this queue will be permanently deleted.',
+                okText: 'Clear All UTRs',
+                onConfirm: () => {
+                    if (latestAdminData) {
+                        latestAdminData.withdrawals = [];
+                        renderAdminDashboard();
+                    }
+                    showAdminToast('✓ All UTR & withdrawal records deleted');
+                    void getFbStoreFast().then((fb) => fb && typeof fb.adminClearUtrs === 'function' && fb.adminClearUtrs('all'));
+                },
+            });
+        });
+    }
+
+    if (clearSmsBtn) {
+        clearSmsBtn.addEventListener('click', () => {
+            showAdminConfirm({
+                title: 'Clear All SMS Broadcast Logs?',
+                message: 'All logged incoming Truecaller SMS records will be removed.',
+                okText: 'Clear SMS Logs',
+                onConfirm: () => {
+                    if (latestAdminData) {
+                        latestAdminData.smsLogs = [];
+                        renderAdminDashboard();
+                    }
+                    showAdminToast('✓ SMS broadcast logs cleared');
+                    void getFbStoreFast().then((fb) => fb && typeof fb.adminClearSmsLogs === 'function' && fb.adminClearSmsLogs());
+                },
+            });
+        });
+    }
+
+    if (activityShowAllBtn) {
+        activityShowAllBtn.addEventListener('click', () => {
+            showAllActivityLogs = !showAllActivityLogs;
+            lastLogsSig = '';
+            renderAdminDashboard();
         });
     }
 
@@ -1245,6 +1450,13 @@ function initAdminPortal() {
         });
     }
 
+    let lastMetricsSig = '';
+    let lastRosterSig = '';
+    let lastUtrsSig = '';
+    let lastLogsSig = '';
+    let lastSmsSig = '';
+    let lastReferralsSig = '';
+
     function renderAdminDashboard() {
         if (!isAdminSessionActive() || !latestAdminData) return;
 
@@ -1255,6 +1467,13 @@ function initAdminPortal() {
 
         const nowLocal = new Date();
         const todayDateStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, '0')}-${String(nowLocal.getDate()).padStart(2, '0')}`;
+        const referralMap = buildReferralStatsMap(users);
+
+        let totalReferralSignups = 0;
+        for (const entry of referralMap.values()) {
+            totalReferralSignups += entry.referredUsers.length;
+        }
+
         const isTodayTs = (ts) => {
             if (!ts) return false;
             try {
@@ -1314,26 +1533,32 @@ function initAdminPortal() {
             });
         }
 
-        const setText = (id, val) => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = String(val);
-        };
-        setText('metricTodayLogins', totalLoginsToday);
-        setText('metricDistinctTodayUsers', `${distinctTodayUsers.size} Distinct Users`);
-        setText('metricTodayRegistrations', todayRegistrations);
-        setText('metricTotalUsersCount', `${totalUsersCount} Total Accounts`);
-        setText('metricTodayVolume', `₹${todayVolume.toLocaleString('en-IN')}`);
-        setText('metricTxnCountToday', `${todayTxnCount} credit transactions`);
-        setText('metricTotalCommission', `₹${totalCommissionDue.toLocaleString('en-IN')}`);
-        setText('metricActiveRunning', activeRunningAccounts);
-        setText('metricActivatedCount', `${activatedAccountsCount} Activated`);
+        const metricsSig = `${totalLoginsToday}|${distinctTodayUsers.size}|${todayRegistrations}|${totalUsersCount}|${todayVolume}|${todayTxnCount}|${totalCommissionDue}|${activeRunningAccounts}|${activatedAccountsCount}|${allLogs.length}|${withdrawals.length}|${smsLogs.length}|${totalReferralSignups}`;
+        if (metricsSig !== lastMetricsSig) {
+            lastMetricsSig = metricsSig;
+            const setText = (id, val) => {
+                const el = document.getElementById(id);
+                if (el && el.textContent !== String(val)) el.textContent = String(val);
+            };
+            setText('metricTodayLogins', totalLoginsToday);
+            setText('metricDistinctTodayUsers', `${distinctTodayUsers.size} Distinct Users`);
+            setText('metricTodayRegistrations', todayRegistrations);
+            setText('metricTotalUsersCount', `${totalUsersCount} Total Accounts`);
+            setText('metricTodayVolume', `₹${todayVolume.toLocaleString('en-IN')}`);
+            setText('metricTxnCountToday', `${todayTxnCount} credit transactions`);
+            setText('metricTotalCommission', `₹${totalCommissionDue.toLocaleString('en-IN')}`);
+            setText('metricActiveRunning', activeRunningAccounts);
+            setText('metricActivatedCount', `${activatedAccountsCount} Activated`);
 
-        setText('activityLogsCountBadge', allLogs.length);
-        setText('userRosterCountBadge', totalUsersCount);
-        setText('withdrawalsCountBadge', withdrawals.length);
-        setText('smsNotifCountBadge', smsLogs.length);
+            setText('activityLogsCountBadge', allLogs.length);
+            setText('userRosterCountBadge', totalUsersCount);
+            setText('referralsCountBadge', totalReferralSignups);
+            setText('withdrawalsCountBadge', withdrawals.length);
+            setText('smsNotifCountBadge', smsLogs.length);
+        }
 
-        renderUserRosterTable(users, withdrawals, allLogs, currentPeriodFilter, currentSearchTerm, todayDateStr);
+        renderUserRosterTable(users, withdrawals, allLogs, referralMap, currentPeriodFilter, currentSearchTerm, todayDateStr);
+        renderReferralsPage(users, referralMap, currentSearchTerm);
         renderWithdrawalsTable(withdrawals, currentSearchTerm);
         renderActivityLogsTable(allLogs, currentPeriodFilter, currentSearchTerm, todayDateStr);
         renderSmsNotificationsTable(smsLogs, currentSearchTerm);
@@ -1354,6 +1579,7 @@ function initAdminPortal() {
     function renderActivityLogsTable(logs, filterPeriod, search, todayStr) {
         const tbody = document.getElementById('activityLogsTableBody');
         const noActMsg = document.getElementById('noActivityMessage');
+        const loadMoreWrap = document.getElementById('activityLoadMoreWrap');
         if (!tbody) return;
 
         let filtered = logs.filter((l) => {
@@ -1371,18 +1597,39 @@ function initAdminPortal() {
             );
         }
 
-        if (filtered.length === 0) {
+        const totalFilteredCount = filtered.length;
+        const limitCap = showAllActivityLogs ? totalFilteredCount : 150;
+        const visibleList = filtered.slice(0, limitCap);
+
+        const logsSig = `${filterPeriod}|${search}|${showAllActivityLogs ? 1 : 0}|${totalFilteredCount}|${visibleList.map((x) => x.id).join(',')}`;
+        if (logsSig === lastLogsSig) return;
+        lastLogsSig = logsSig;
+
+        if (visibleList.length === 0) {
             tbody.innerHTML = '';
             if (noActMsg) noActMsg.style.display = 'block';
+            if (loadMoreWrap) loadMoreWrap.style.display = 'none';
             return;
         }
         if (noActMsg) noActMsg.style.display = 'none';
 
-        tbody.innerHTML = filtered
+        if (loadMoreWrap && activityShowAllBtn) {
+            if (totalFilteredCount > 150) {
+                loadMoreWrap.style.display = 'block';
+                activityShowAllBtn.textContent = showAllActivityLogs
+                    ? `Showing All ${totalFilteredCount} Logs (Collapse to Latest 150)`
+                    : `Show All ${totalFilteredCount} Logs (Showing Latest 150)`;
+            } else {
+                loadMoreWrap.style.display = 'none';
+            }
+        }
+
+        tbody.innerHTML = visibleList
             .map((item) => {
                 const timeFormatted = formatTimeForLog(item.timestamp);
                 const userInitial = (item.username || 'U')[0].toUpperCase();
                 const actionBadge = getActionTypeBadge(item.actionType);
+                const safeId = escapeHtmlSafe(item.id);
                 return `
                     <tr>
                         <td class="mono-time">${timeFormatted}</td>
@@ -1390,21 +1637,39 @@ function initAdminPortal() {
                             <div class="user-cell">
                                 <div class="user-avatar-sm">${userInitial}</div>
                                 <div class="user-info-text">
-                                    <strong>${item.username}</strong>
-                                    <small>${item.mobile ? `+91 ${item.mobile}` : 'System'}</small>
+                                    <strong>${escapeHtmlSafe(item.username)}</strong>
+                                    <small>${item.mobile ? `+91 ${escapeHtmlSafe(item.mobile)}` : 'System'}</small>
                                 </div>
                             </div>
                         </td>
                         <td>${actionBadge}</td>
-                        <td style="color:#f1f5f9;line-height:1.4;">${item.details || '-'}</td>
-                        <td><span class="badge-status-active">${item.status || 'Success'}</span></td>
+                        <td style="color:#f1f5f9;line-height:1.4;">${escapeHtmlSafe(item.details || '-')}</td>
+                        <td><span class="badge-status-active">${escapeHtmlSafe(item.status || 'Success')}</span></td>
+                        <td style="text-align:right;white-space:nowrap;">
+                            <button type="button" class="btn-delete-mini delete-log-btn" data-id="${safeId}" title="Delete this activity log">🗑</button>
+                        </td>
                     </tr>
                 `;
             })
             .join('');
+
+        tbody.querySelectorAll('.delete-log-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const logId = btn.getAttribute('data-id');
+                if (!logId) return;
+                if (latestAdminData) {
+                    latestAdminData.activityLogs = (latestAdminData.activityLogs || []).filter((l) => l && l.id !== logId);
+                    lastLogsSig = '';
+                    renderAdminDashboard();
+                }
+                showAdminToast('🗑 Activity log deleted');
+                void getFbStoreFast().then((fb) => fb && typeof fb.adminDeleteActivityLog === 'function' && fb.adminDeleteActivityLog(logId));
+            });
+        });
     }
 
-    function renderUserRosterTable(users, withdrawals, allLogs, filterPeriod, search, todayStr) {
+    function renderUserRosterTable(users, withdrawals, allLogs, referralMap, filterPeriod, search, todayStr) {
         const tbody = document.getElementById('userRosterTableBody');
         if (!tbody) return;
 
@@ -1416,6 +1681,7 @@ function initAdminPortal() {
                 (u) =>
                     (u.username && u.username.toLowerCase().includes(search)) ||
                     (u.mobile && u.mobile.includes(search)) ||
+                    (u.referralCode && u.referralCode.toLowerCase().includes(search)) ||
                     (u.accountDetails && u.accountDetails.bankName && u.accountDetails.bankName.toLowerCase().includes(search)) ||
                     (u.accountDetails && u.accountDetails.ifscCode && u.accountDetails.ifscCode.toLowerCase().includes(search)) ||
                     (u.accountDetails && u.accountDetails.accountNumber && u.accountDetails.accountNumber.toLowerCase().includes(search)) ||
@@ -1430,6 +1696,16 @@ function initAdminPortal() {
                     isSameDayAsFilter(u.registeredAt, todayStr)
             );
         }
+
+        const rosterSig = `${filterPeriod}|${search}|${todayStr}|${userList.map((u) => {
+            const refCount = referralMap.get(u.username)?.referredUsers?.length || 0;
+            const userUtrCount = withdrawals.filter((w) => w.username === u.username).length;
+            const topUtr = withdrawals.find((w) => w.username === u.username);
+            return `${u.username}:${u.activated ? 1 : 0}:${u.activationStatus || ''}:${u.balance || 0}:${u.commission || 0}:${u.loginCount || 0}:${u.accountDetails?.bankName || ''}:${u.autodebitDetails ? 1 : 0}:${refCount}:${userUtrCount}:${topUtr?.status || ''}`;
+        }).join(';')}`;
+
+        if (rosterSig === lastRosterSig) return;
+        lastRosterSig = rosterSig;
 
         if (userList.length === 0) {
             tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:34px 20px;color:#94a3b8;line-height:1.6;">
@@ -1453,8 +1729,8 @@ function initAdminPortal() {
                     ? `<div class="bank-tag-cell">
                         <div class="bank-mini-icon">${bankBrand ? renderBankLogoImgHtml(bankBrand) : '🏦'}</div>
                         <div>
-                            <strong style="color:#ffffff;">${accDetails.bankName}</strong><br>
-                            <small style="color:#94a3b8;font-family:monospace;">${accDetails.ifscCode || ''} • ${maskAccountNumber(accDetails.accountNumber)}</small>
+                            <strong style="color:#ffffff;">${escapeHtmlSafe(accDetails.bankName)}</strong><br>
+                            <small style="color:#94a3b8;font-family:monospace;">${escapeHtmlSafe(accDetails.ifscCode || '')} • ${maskAccountNumber(accDetails.accountNumber)}</small>
                         </div>
                     </div>`
                     : `<span style="color:#64748b;font-style:italic;">No bank linked</span>`;
@@ -1462,7 +1738,7 @@ function initAdminPortal() {
                 const userUtrs = withdrawals.filter((w) => w.username === u.username);
                 const latestUtr = userUtrs[0];
                 const utrDisplay = latestUtr
-                    ? `<span class="utr-code-badge" style="font-size:0.76rem;">${latestUtr.utr || latestUtr.tokenNumber || 'Submitted'}</span><br><small style="color:#94a3b8;">${userUtrs.length} record(s)</small>`
+                    ? `<span class="utr-code-badge" style="font-size:0.76rem;">${escapeHtmlSafe(latestUtr.utr || latestUtr.tokenNumber || 'Submitted')}</span><br><small style="color:#94a3b8;">${userUtrs.length} record(s)</small>`
                     : `<span style="color:#64748b;">No UTR yet</span>`;
 
                 const b = u.balance !== undefined ? Number(u.balance || 0) : parseFloat(localStorage.getItem(pKey(`balance_${u.username}`)) || '0') || 0;
@@ -1474,28 +1750,37 @@ function initAdminPortal() {
                     : `<span style="color:#64748b;">Not configured</span>`;
 
                 const actStatus = u.activationStatus || (u.activated ? 'approved' : 'not_submitted');
-                const statusBadge =
-                    actStatus === 'approved' && u.activated
-                        ? `<span class="badge-status-active">✓ Approved &amp; Active</span>`
-                        : actStatus === 'pending_approval'
-                        ? `<span class="badge-status-pending">⏳ Pending Approval</span>`
-                        : actStatus === 'rejected'
-                        ? `<span class="badge-status-pending" style="background:rgba(239,68,68,0.2);color:#f87171;border-color:rgba(239,68,68,0.4);">✕ Rejected</span>`
-                        : `<span class="badge-status-pending" style="opacity:0.75;">● Unactivated</span>`;
+                const isApprovedNow = actStatus === 'approved' && u.activated;
+                const statusBadge = isApprovedNow
+                    ? `<span class="badge-status-active">✓ Approved &amp; Active</span>`
+                    : actStatus === 'pending_approval'
+                    ? `<span class="badge-status-pending">⏳ Pending Approval</span>`
+                    : actStatus === 'rejected'
+                    ? `<span class="badge-status-pending" style="background:rgba(239,68,68,0.2);color:#f87171;border-color:rgba(239,68,68,0.4);">✕ Rejected</span>`
+                    : `<span class="badge-status-pending" style="opacity:0.75;">● Unactivated</span>`;
+
+                const refEntry = referralMap.get(u.username);
+                const refCount = refEntry ? refEntry.referredUsers.length : 0;
+                const refMiniTag = refCount > 0
+                    ? `<small style="color:#fbbf24;display:block;margin-top:2px;">🤝 ${refCount} Referred</small>`
+                    : '';
+
+                const safeUname = escapeHtmlSafe(u.username);
 
                 return `
-                    <tr class="clickable-user-row" data-username="${u.username}" title="Click to inspect everything entered by @${u.username}">
+                    <tr class="clickable-user-row" data-username="${safeUname}" title="Click to inspect everything entered by @${safeUname}">
                         <td>
                             <div class="user-cell">
                                 <div class="user-avatar-sm">${(u.username || 'U')[0].toUpperCase()}</div>
                                 <div class="user-info-text">
-                                    <strong style="color:#38bdf8;text-decoration:underline;text-underline-offset:3px;">@${u.username}</strong>
-                                    <small>${u.email || `${u.username}@user`}</small>
+                                    <strong style="color:#38bdf8;text-decoration:underline;text-underline-offset:3px;">@${safeUname}</strong>
+                                    <small>${escapeHtmlSafe(u.email || `${u.username}@user`)}</small>
+                                    ${refMiniTag}
                                 </div>
                             </div>
                         </td>
                         <td>
-                            <span style="font-family:monospace;font-weight:700;color:#38bdf8;">+91 ${u.mobile || 'Not set'}</span>
+                            <span style="font-family:monospace;font-weight:700;color:#38bdf8;">+91 ${escapeHtmlSafe(u.mobile || 'Not set')}</span>
                             <br><small style="color:#4ade80;">✓ Real OTP Verified</small>
                         </td>
                         <td>
@@ -1510,8 +1795,15 @@ function initAdminPortal() {
                         </td>
                         <td>${atmDisplay}</td>
                         <td>${statusBadge}</td>
-                        <td style="text-align: right;">
-                            <button type="button" class="btn btn-sm btn-admin-action inspect-user-btn" data-username="${u.username}">View All</button>
+                        <td style="text-align: right; white-space: nowrap;">
+                            <div class="admin-row-actions">
+                                ${isApprovedNow
+                                    ? `<button type="button" class="btn-quick-approve-mini is-active-btn" disabled title="Account is active">✓ Active</button>`
+                                    : `<button type="button" class="btn-quick-approve-mini roster-start-btn" data-username="${safeUname}" title="Approve &amp; Start Panel immediately">✓ Start</button>`}
+                                <button type="button" class="btn-quick-reject-mini roster-reject-btn" data-username="${safeUname}" title="Reject payment immediately">✕ Reject</button>
+                                <button type="button" class="btn btn-sm btn-admin-action inspect-user-btn" data-username="${safeUname}">View</button>
+                                <button type="button" class="btn-delete-mini roster-delete-btn" data-username="${safeUname}" title="Delete user account">🗑</button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -1522,6 +1814,375 @@ function initAdminPortal() {
             row.addEventListener('click', () => {
                 const uname = row.getAttribute('data-username');
                 inspectUserModal(uname, users[uname], withdrawals, allLogs);
+            });
+        });
+
+        tbody.querySelectorAll('.inspect-user-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const uname = btn.getAttribute('data-username');
+                inspectUserModal(uname, users[uname], withdrawals, allLogs);
+            });
+        });
+
+        tbody.querySelectorAll('.roster-start-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const uname = btn.getAttribute('data-username');
+                if (!uname) return;
+                if (latestAdminData?.users?.[uname]) {
+                    latestAdminData.users[uname].activated = true;
+                    latestAdminData.users[uname].activationStatus = 'approved';
+                    latestAdminData.users[uname].rejectionMessage = '';
+                    lastRosterSig = '';
+                    renderAdminDashboard();
+                }
+                showAdminToast(`✓ Panel Approved & Started instantly for @${uname}`);
+                void getFbStoreFast().then((fb) => fb && typeof fb.adminApproveUserPanel === 'function' && fb.adminApproveUserPanel(uname, ''));
+            });
+        });
+
+        tbody.querySelectorAll('.roster-reject-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const uname = btn.getAttribute('data-username');
+                if (!uname) return;
+                const defaultRejectMsg = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
+                if (latestAdminData?.users?.[uname]) {
+                    latestAdminData.users[uname].activated = false;
+                    latestAdminData.users[uname].activationStatus = 'rejected';
+                    latestAdminData.users[uname].rejectionMessage = defaultRejectMsg;
+                    lastRosterSig = '';
+                    renderAdminDashboard();
+                }
+                showAdminToast(`✕ Payment Rejected for @${uname}`);
+                void getFbStoreFast().then((fb) => fb && typeof fb.adminRejectUserPayment === 'function' && fb.adminRejectUserPayment(uname, ''));
+            });
+        });
+
+        tbody.querySelectorAll('.roster-delete-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const uname = btn.getAttribute('data-username');
+                if (!uname) return;
+                showAdminConfirm({
+                    title: `Delete User @${uname}?`,
+                    message: `This will permanently delete @${uname}, their linked bank/ATM data, UTR records, and activity logs.`,
+                    okText: 'Delete User',
+                    onConfirm: () => {
+                        if (latestAdminData) {
+                            if (latestAdminData.users) delete latestAdminData.users[uname];
+                            latestAdminData.withdrawals = (latestAdminData.withdrawals || []).filter((w) => w.username !== uname);
+                            latestAdminData.activityLogs = (latestAdminData.activityLogs || []).filter((l) => l.username !== uname);
+                            latestAdminData.smsLogs = (latestAdminData.smsLogs || []).filter((s) => s.username !== uname);
+                            if (selectedReferrerUsername === uname) selectedReferrerUsername = '';
+                            lastRosterSig = '';
+                            lastUtrsSig = '';
+                            lastLogsSig = '';
+                            lastSmsSig = '';
+                            lastReferralsSig = '';
+                            renderAdminDashboard();
+                        }
+                        showAdminToast(`🗑 Deleted user @${uname}`);
+                        void getFbStoreFast().then((fb) => fb && typeof fb.adminDeleteUser === 'function' && fb.adminDeleteUser(uname));
+                    },
+                });
+            });
+        });
+    }
+
+    function renderReferralDrilldown(ownerUsername, users, referralMap) {
+        const panel = document.getElementById('referralDetailPanel');
+        if (!panel) return;
+
+        if (!ownerUsername || !referralMap.has(ownerUsername)) {
+            panel.style.display = 'none';
+            panel.innerHTML = '';
+            return;
+        }
+
+        const entry = referralMap.get(ownerUsername);
+        const owner = entry.owner;
+        const list = entry.referredUsers;
+        const safeOwner = escapeHtmlSafe(ownerUsername);
+        const safeCode = escapeHtmlSafe(entry.code);
+
+        panel.style.display = 'block';
+        panel.innerHTML = `
+            <div class="ref-drill-header">
+                <div>
+                    <div class="ref-drill-kicker">REFERRAL SHARE DETAILS</div>
+                    <h4 class="ref-drill-title">@${safeOwner} <span class="ref-code-pill">${safeCode}</span></h4>
+                    <p class="ref-drill-sub">
+                        <strong style="color:#38bdf8;">${list.length} user${list.length === 1 ? '' : 's'}</strong> joined using @${safeOwner}'s referral link •
+                        <strong style="color:#4ade80;">${entry.activatedCount} Activated</strong> •
+                        <strong style="color:#fbbf24;">${entry.pendingCount} Pending</strong> •
+                        <strong style="color:#22c55e;">₹${entry.bonusEarned.toLocaleString('en-IN')} Earned</strong>
+                    </p>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-sm btn-admin-action" id="refInspectOwnerBtn">👤 Inspect @${safeOwner}</button>
+                    <button type="button" class="admin-modal-close" id="refCloseDrillBtn" title="Close details">✕</button>
+                </div>
+            </div>
+
+            ${list.length === 0
+                ? `<div class="ref-drill-empty">No customer has signed up using @${safeOwner}'s referral code (<strong>${safeCode}</strong>) yet.</div>`
+                : `<div class="table-responsive" style="margin-top:12px;">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Joined Username</th>
+                                <th>Mobile</th>
+                                <th>Joined Date &amp; Time</th>
+                                <th>Activation Status</th>
+                                <th style="text-align:right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${list.map((ru, idx) => {
+                                const isAct = isUserActivatedForReferral(ru);
+                                const safeRu = escapeHtmlSafe(ru.username);
+                                const statusHtml = isAct
+                                    ? `<span class="badge-status-active">✓ Activated (+₹699)</span>`
+                                    : ru.activationStatus === 'pending_approval'
+                                    ? `<span class="badge-status-pending">⏳ Pending UTR</span>`
+                                    : ru.activationStatus === 'rejected'
+                                    ? `<span class="badge-status-pending" style="background:rgba(239,68,68,0.2);color:#f87171;border-color:rgba(239,68,68,0.4);">✕ Rejected</span>`
+                                    : `<span class="badge-status-pending" style="opacity:0.75;">● Not Activated</span>`;
+                                return `
+                                    <tr>
+                                        <td class="mono-time">${idx + 1}</td>
+                                        <td>
+                                            <button type="button" class="referral-user-link drill-inspect-referred" data-username="${safeRu}">@${safeRu}</button>
+                                        </td>
+                                        <td style="font-family:monospace;color:#38bdf8;">+91 ${escapeHtmlSafe(ru.mobile || 'Not set')}</td>
+                                        <td class="mono-time">${formatTimeForLog(ru.registeredAt)}</td>
+                                        <td>${statusHtml}</td>
+                                        <td style="text-align:right;white-space:nowrap;">
+                                            <div class="admin-row-actions">
+                                                ${!isAct ? `<button type="button" class="btn-quick-approve-mini drill-start-referred" data-username="${safeRu}">✓ Start</button>` : ''}
+                                                <button type="button" class="btn btn-sm btn-admin-action drill-inspect-referred" data-username="${safeRu}">Inspect</button>
+                                                <button type="button" class="btn-delete-mini drill-delete-referred" data-username="${safeRu}" title="Delete user">🗑</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>`
+            }
+        `;
+
+        const closeBtn = document.getElementById('refCloseDrillBtn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                selectedReferrerUsername = '';
+                lastReferralsSig = '';
+                renderAdminDashboard();
+            });
+        }
+
+        const inspectOwnerBtn = document.getElementById('refInspectOwnerBtn');
+        if (inspectOwnerBtn) {
+            inspectOwnerBtn.addEventListener('click', () => {
+                inspectUserModal(ownerUsername, owner, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+            });
+        }
+
+        panel.querySelectorAll('.drill-inspect-referred').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const targetU = btn.getAttribute('data-username');
+                if (targetU && users[targetU]) {
+                    inspectUserModal(targetU, users[targetU], latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                }
+            });
+        });
+
+        panel.querySelectorAll('.drill-start-referred').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const targetU = btn.getAttribute('data-username');
+                if (!targetU) return;
+                if (latestAdminData?.users?.[targetU]) {
+                    latestAdminData.users[targetU].activated = true;
+                    latestAdminData.users[targetU].activationStatus = 'approved';
+                    latestAdminData.users[targetU].rejectionMessage = '';
+                    lastReferralsSig = '';
+                    lastRosterSig = '';
+                    renderAdminDashboard();
+                }
+                showAdminToast(`✓ Approved & Started @${targetU}`);
+                void getFbStoreFast().then((fb) => fb && typeof fb.adminApproveUserPanel === 'function' && fb.adminApproveUserPanel(targetU, ''));
+            });
+        });
+
+        panel.querySelectorAll('.drill-delete-referred').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const targetU = btn.getAttribute('data-username');
+                if (!targetU) return;
+                showAdminConfirm({
+                    title: `Delete User @${targetU}?`,
+                    message: `Remove @${targetU} permanently from database and referral list?`,
+                    okText: 'Delete User',
+                    onConfirm: () => {
+                        if (latestAdminData) {
+                            if (latestAdminData.users) delete latestAdminData.users[targetU];
+                            latestAdminData.withdrawals = (latestAdminData.withdrawals || []).filter((w) => w.username !== targetU);
+                            latestAdminData.activityLogs = (latestAdminData.activityLogs || []).filter((l) => l.username !== targetU);
+                            latestAdminData.smsLogs = (latestAdminData.smsLogs || []).filter((s) => s.username !== targetU);
+                            lastReferralsSig = '';
+                            lastRosterSig = '';
+                            renderAdminDashboard();
+                        }
+                        showAdminToast(`🗑 Deleted user @${targetU}`);
+                        void getFbStoreFast().then((fb) => fb && typeof fb.adminDeleteUser === 'function' && fb.adminDeleteUser(targetU));
+                    },
+                });
+            });
+        });
+    }
+
+    function renderReferralsPage(users, referralMap, search) {
+        const tbody = document.getElementById('referralsTableBody');
+        const noRefMsg = document.getElementById('noReferralsMessage');
+        if (!tbody) return;
+
+        let activeReferrersCount = 0;
+        let totalShares = 0;
+        let totalActivated = 0;
+        let totalBonus = 0;
+
+        let entries = Array.from(referralMap.values());
+        entries.forEach((e) => {
+            if (e.referredUsers.length > 0) activeReferrersCount += 1;
+            totalShares += e.referredUsers.length;
+            totalActivated += e.activatedCount;
+            totalBonus += e.bonusEarned;
+        });
+
+        const refSig = `${currentRefFilter}|${search}|${selectedReferrerUsername}|${entries.map((e) => `${e.owner.username}:${e.code}:${e.referredUsers.map((r) => `${r.username}:${isUserActivatedForReferral(r) ? 1 : 0}`).join(',')}`).join(';')}`;
+        if (refSig === lastReferralsSig) return;
+        lastReferralsSig = refSig;
+
+        const setTxt = (id, v) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = String(v);
+        };
+        setTxt('refTotalReferrersVal', activeReferrersCount);
+        setTxt('refTotalSharesVal', totalShares);
+        setTxt('refTotalActivatedVal', totalActivated);
+        setTxt('refTotalBonusVal', `₹${totalBonus.toLocaleString('en-IN')}`);
+
+        if (currentRefFilter === 'active_referrers') {
+            entries = entries.filter((e) => e.referredUsers.length > 0);
+        }
+
+        if (search) {
+            entries = entries.filter((e) => {
+                const matchOwner =
+                    e.owner.username.toLowerCase().includes(search) ||
+                    (e.owner.mobile && e.owner.mobile.includes(search)) ||
+                    e.code.toLowerCase().includes(search);
+                const matchReferred = e.referredUsers.some(
+                    (ru) => ru.username.toLowerCase().includes(search) || (ru.mobile && ru.mobile.includes(search))
+                );
+                return matchOwner || matchReferred;
+            });
+        }
+
+        entries.sort((a, b) => {
+            const diffCount = b.referredUsers.length - a.referredUsers.length;
+            if (diffCount !== 0) return diffCount;
+            return new Date(b.owner.lastLoginAt || b.owner.registeredAt || 0).getTime() - new Date(a.owner.lastLoginAt || a.owner.registeredAt || 0).getTime();
+        });
+
+        renderReferralDrilldown(selectedReferrerUsername, users, referralMap);
+
+        if (entries.length === 0) {
+            tbody.innerHTML = '';
+            if (noRefMsg) noRefMsg.style.display = 'block';
+            return;
+        }
+        if (noRefMsg) noRefMsg.style.display = 'none';
+
+        tbody.innerHTML = entries
+            .map((entry) => {
+                const u = entry.owner;
+                const safeUname = escapeHtmlSafe(u.username);
+                const safeCode = escapeHtmlSafe(entry.code);
+                const totalRef = entry.referredUsers.length;
+                const isSelected = selectedReferrerUsername === u.username;
+
+                return `
+                    <tr class="clickable-user-row ${isSelected ? 'ref-row-selected' : ''}" data-ref-owner="${safeUname}">
+                        <td>
+                            <div class="user-cell">
+                                <div class="user-avatar-sm">${(u.username || 'U')[0].toUpperCase()}</div>
+                                <div class="user-info-text">
+                                    <button type="button" class="referral-user-link open-ref-owner-btn" data-username="${safeUname}">@${safeUname}</button>
+                                    <small>${u.referredBy ? `Joined via @${escapeHtmlSafe(u.referredBy)}` : 'Direct Signup'}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td style="font-family:monospace;color:#38bdf8;">+91 ${escapeHtmlSafe(u.mobile || 'Not set')}</td>
+                        <td>
+                            <div class="utr-code-badge">
+                                <span>${safeCode}</span>
+                                <button type="button" class="btn-copy-utr-mini copy-ref-code-btn" data-copy-ref="${safeCode}">Copy</button>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="ref-count-badge ${totalRef > 0 ? 'has-refs' : ''}">${totalRef} Referred</span>
+                        </td>
+                        <td><span class="badge-status-active">${entry.activatedCount} Active</span></td>
+                        <td><span class="badge-status-pending" style="opacity:${entry.pendingCount > 0 ? 1 : 0.6};">${entry.pendingCount} Pending</span></td>
+                        <td><strong style="color:#22c55e;">₹${entry.bonusEarned.toLocaleString('en-IN')}</strong></td>
+                        <td style="text-align:right;white-space:nowrap;">
+                            <button type="button" class="btn btn-sm btn-admin-action open-ref-owner-btn" data-username="${safeUname}">
+                                ${isSelected ? 'Viewing ▼' : 'View Shares →'}
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            })
+            .join('');
+
+        tbody.querySelectorAll('.copy-ref-code-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const code = btn.getAttribute('data-copy-ref');
+                if (!code) return;
+                navigator.clipboard.writeText(code).then(() => {
+                    btn.textContent = '✓ Copied';
+                    setTimeout(() => { btn.textContent = 'Copy'; }, 1400);
+                }).catch(() => {});
+            });
+        });
+
+        const selectReferrer = (uname) => {
+            selectedReferrerUsername = selectedReferrerUsername === uname ? '' : uname;
+            lastReferralsSig = '';
+            renderAdminDashboard();
+            const drillEl = document.getElementById('referralDetailPanel');
+            if (selectedReferrerUsername && drillEl) {
+                drillEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        };
+
+        tbody.querySelectorAll('.open-ref-owner-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const uname = btn.getAttribute('data-username');
+                if (uname) selectReferrer(uname);
+            });
+        });
+
+        tbody.querySelectorAll('[data-ref-owner]').forEach((row) => {
+            row.addEventListener('click', () => {
+                const uname = row.getAttribute('data-ref-owner');
+                if (uname) selectReferrer(uname);
             });
         });
     }
@@ -1556,6 +2217,10 @@ function initAdminPortal() {
             );
         }
 
+        const utrsSig = `${currentUtrFilter}|${search}|${pendingCount}|${list.map((w) => `${w.id}:${w.status}:${w.utr || ''}`).join(';')}`;
+        if (utrsSig === lastUtrsSig) return;
+        lastUtrsSig = utrsSig;
+
         if (list.length === 0) {
             tbody.innerHTML = '';
             if (noWth) noWth.style.display = 'block';
@@ -1575,36 +2240,42 @@ function initAdminPortal() {
                     String(item.type || '').toLowerCase().includes('upgrade');
 
                 const statusBadge = isApproved
-                    ? `<span class="badge-status-active">${item.status}</span>${isUpgrade199 ? `<br><span class="receipt-issued-tag">📄 Receipt Issued</span>` : ''}`
+                    ? `<span class="badge-status-active">${escapeHtmlSafe(item.status)}</span>${isUpgrade199 ? `<br><span class="receipt-issued-tag">📄 Receipt Issued</span>` : ''}`
                     : isRejected
-                    ? `<span class="badge-status-pending" style="background:rgba(239,68,68,0.2);color:#f87171;border-color:rgba(239,68,68,0.4);">${item.status}</span>`
-                    : `<span class="badge-status-pending">⏳ ${item.status || 'Pending Verification'}</span>`;
+                    ? `<span class="badge-status-pending" style="background:rgba(239,68,68,0.2);color:#f87171;border-color:rgba(239,68,68,0.4);">${escapeHtmlSafe(item.status)}</span>`
+                    : `<span class="badge-status-pending">⏳ ${escapeHtmlSafe(item.status || 'Pending Verification')}</span>`;
 
                 const utrCode = item.utr || item.tokenNumber || '';
                 const utrBadge = utrCode
                     ? `<div class="utr-code-badge">
-                        <span>${utrCode}</span>
-                        <button type="button" class="btn-copy-utr-mini" data-copy-utr="${utrCode}" title="Copy UTR">Copy</button>
+                        <span>${escapeHtmlSafe(utrCode)}</span>
+                        <button type="button" class="btn-copy-utr-mini" data-copy-utr="${escapeHtmlSafe(utrCode)}" title="Copy UTR">Copy</button>
                        </div>`
                     : `<span style="color:#64748b;">-</span>`;
+
+                const safeId = escapeHtmlSafe(item.id);
+                const safeUser = escapeHtmlSafe(item.username);
 
                 return `
                     <tr class="${isPending ? 'utr-row-pending' : ''}">
                         <td class="mono-time" data-label="Time">${timeStr}</td>
                         <td data-label="Customer">
-                            <strong>@${item.username}</strong>
-                            ${item.accountHolder ? `<br><small style="color:#e2e8f0;font-weight:600;">${item.accountHolder}</small>` : ''}
-                            ${item.contact ? `<br><small style="color:#38bdf8;font-family:monospace;">+91 ${item.contact}</small>` : ''}
+                            <strong>@${safeUser}</strong>
+                            ${item.accountHolder ? `<br><small style="color:#e2e8f0;font-weight:600;">${escapeHtmlSafe(item.accountHolder)}</small>` : ''}
+                            ${item.contact ? `<br><small style="color:#38bdf8;font-family:monospace;">+91 ${escapeHtmlSafe(item.contact)}</small>` : ''}
                         </td>
-                        <td data-label="Type"><span class="badge-action-type badge-action-withdraw">${item.type}</span></td>
+                        <td data-label="Type"><span class="badge-action-type badge-action-withdraw">${escapeHtmlSafe(item.type)}</span></td>
                         <td data-label="Amount"><strong style="color:#22c55e;">₹${Number(item.amount || 0).toLocaleString('en-IN')}</strong></td>
-                        <td data-label="Bank">${item.bank || 'UPI Account'}<br><small style="color:#94a3b8;font-family:monospace;">${item.accNumber ? maskAccountNumber(item.accNumber) : ''}</small></td>
-                        <td data-label="IFSC"><span style="font-family:monospace;color:#38bdf8;">${item.ifsc || 'UPI-DIRECT'}</span></td>
+                        <td data-label="Bank">${escapeHtmlSafe(item.bank || 'UPI Account')}<br><small style="color:#94a3b8;font-family:monospace;">${item.accNumber ? maskAccountNumber(item.accNumber) : ''}</small></td>
+                        <td data-label="IFSC"><span style="font-family:monospace;color:#38bdf8;">${escapeHtmlSafe(item.ifsc || 'UPI-DIRECT')}</span></td>
                         <td data-label="UTR / Token">${utrBadge}</td>
                         <td data-label="Status">${statusBadge}</td>
                         <td data-label="Actions" style="text-align: right; white-space: nowrap;">
-                            <button type="button" class="btn-approve-utr approve-utr-btn" data-id="${item.id}" data-user="${item.username}" data-upgrade="${isUpgrade199 ? '1' : '0'}">${isUpgrade199 ? '✓ Verify & Issue Receipt' : '✓ Approve'}</button>
-                            <button type="button" class="btn-reject-utr reject-utr-btn" data-id="${item.id}" data-user="${item.username}">✕ Reject</button>
+                            <div class="admin-row-actions">
+                                <button type="button" class="btn-approve-utr approve-utr-btn" data-id="${safeId}" data-user="${safeUser}" data-upgrade="${isUpgrade199 ? '1' : '0'}">${isUpgrade199 ? '✓ Verify & Issue Receipt' : '✓ Approve'}</button>
+                                <button type="button" class="btn-reject-utr reject-utr-btn" data-id="${safeId}" data-user="${safeUser}">✕ Reject</button>
+                                <button type="button" class="btn-delete-mini delete-utr-btn" data-id="${safeId}" title="Delete this UTR record">🗑</button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -1626,46 +2297,73 @@ function initAdminPortal() {
         });
 
         tbody.querySelectorAll('.approve-utr-btn').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                if (btn.disabled) return;
-                btn.disabled = true;
-                try {
-                    const wid = btn.getAttribute('data-id');
-                    const uname = btn.getAttribute('data-user');
-                    const isUp199 = btn.getAttribute('data-upgrade') === '1';
-                    const targetItem = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
-                    const nextStatus = isUp199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
-                    StorageManager.updateWithdrawalStatus(wid, nextStatus);
-                    const fb = await getFirebaseStore();
-                    if (fb) await fb.adminApproveUtr(wid, uname, targetItem);
-                    showAdminToast(isUp199 ? `✓ ₹199 UTR Verified & Payment Receipt generated for @${uname}` : `✓ UTR Approved & Account Activated for @${uname}`);
-                } catch (err) {
-                    console.error('Approve UTR error:', err);
-                    showAdminToast('Error approving UTR. Please retry.', 'error');
-                } finally {
-                    if (btn.isConnected) btn.disabled = false;
+            btn.addEventListener('click', () => {
+                const wid = btn.getAttribute('data-id');
+                const uname = btn.getAttribute('data-user');
+                const isUp199 = btn.getAttribute('data-upgrade') === '1';
+                const targetItem = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
+                const nextStatus = isUp199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
+
+                if (targetItem) targetItem.status = nextStatus;
+                if (uname && latestAdminData?.users?.[uname]) {
+                    latestAdminData.users[uname].activated = true;
+                    latestAdminData.users[uname].activationStatus = 'approved';
+                    latestAdminData.users[uname].rejectionMessage = '';
                 }
+                StorageManager.updateWithdrawalStatus(wid, nextStatus);
+                lastUtrsSig = '';
+                lastRosterSig = '';
+                renderAdminDashboard();
+                showAdminToast(isUp199 ? `✓ ₹199 UTR Verified & Payment Receipt generated for @${uname}` : `✓ UTR Approved & Account Activated for @${uname}`);
+
+                void getFbStoreFast().then((fb) => fb && fb.adminApproveUtr(wid, uname, targetItem));
             });
         });
 
         tbody.querySelectorAll('.reject-utr-btn').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                if (btn.disabled) return;
-                btn.disabled = true;
-                try {
-                    const wid = btn.getAttribute('data-id');
-                    const uname = btn.getAttribute('data-user');
-                    const targetItem = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
-                    StorageManager.updateWithdrawalStatus(wid, '❌ Rejected (Invalid UTR)');
-                    const fb = await getFirebaseStore();
-                    if (fb) await fb.adminRejectUtr(wid, uname, targetItem);
-                    showAdminToast(`UTR marked rejected for @${uname}`);
-                } catch (err) {
-                    console.error('Reject UTR error:', err);
-                    showAdminToast('Error rejecting UTR. Please retry.', 'error');
-                } finally {
-                    if (btn.isConnected) btn.disabled = false;
+            btn.addEventListener('click', () => {
+                const wid = btn.getAttribute('data-id');
+                const uname = btn.getAttribute('data-user');
+                const targetItem = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
+                const nextStatus = '❌ Rejected (Invalid UTR)';
+                const rejectMsg = 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
+
+                if (targetItem) targetItem.status = nextStatus;
+                if (uname && latestAdminData?.users?.[uname]) {
+                    latestAdminData.users[uname].activated = false;
+                    latestAdminData.users[uname].activationStatus = 'rejected';
+                    latestAdminData.users[uname].rejectionMessage = rejectMsg;
                 }
+                StorageManager.updateWithdrawalStatus(wid, nextStatus);
+                lastUtrsSig = '';
+                lastRosterSig = '';
+                renderAdminDashboard();
+                showAdminToast(`UTR marked rejected for @${uname}`);
+
+                void getFbStoreFast().then((fb) => fb && fb.adminRejectUtr(wid, uname, targetItem));
+            });
+        });
+
+        tbody.querySelectorAll('.delete-utr-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const wid = btn.getAttribute('data-id');
+                const targetItem = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
+                if (!wid) return;
+                showAdminConfirm({
+                    title: 'Delete UTR Record?',
+                    message: `Remove UTR ${targetItem?.utr || wid} for @${targetItem?.username || 'user'} permanently?`,
+                    okText: 'Delete UTR',
+                    onConfirm: () => {
+                        if (latestAdminData) {
+                            latestAdminData.withdrawals = (latestAdminData.withdrawals || []).filter((w) => w.id !== wid);
+                            lastUtrsSig = '';
+                            lastRosterSig = '';
+                            renderAdminDashboard();
+                        }
+                        showAdminToast('🗑 UTR record deleted');
+                        void getFbStoreFast().then((fb) => fb && typeof fb.adminDeleteUtr === 'function' && fb.adminDeleteUtr(wid, targetItem));
+                    },
+                });
             });
         });
     }
@@ -1686,6 +2384,10 @@ function initAdminPortal() {
             );
         }
 
+        const smsSig = `${search}|${list.length}|${list.slice(0, 120).map((s) => s.id).join(',')}`;
+        if (smsSig === lastSmsSig) return;
+        lastSmsSig = smsSig;
+
         if (list.length === 0) {
             tbody.innerHTML = '';
             if (noSms) noSms.style.display = 'block';
@@ -1694,32 +2396,51 @@ function initAdminPortal() {
         if (noSms) noSms.style.display = 'none';
 
         tbody.innerHTML = list
+            .slice(0, 180)
             .map((item) => {
                 const timeStr = formatTimeForLog(item.timestamp);
                 const brand = getBankBrandInfo(item.bankName);
                 const maskedAcc = maskAccountNumber(item.accountNumber);
+                const safeId = escapeHtmlSafe(item.id);
 
                 return `
                     <tr>
                         <td class="mono-time">${timeStr}</td>
-                        <td><strong>@${item.username}</strong></td>
+                        <td><strong>@${escapeHtmlSafe(item.username)}</strong></td>
                         <td>
                             <div class="bank-tag-cell">
                                 <div class="bank-mini-icon">${renderBankLogoImgHtml(brand)}</div>
                                 <div>
-                                    <strong style="color:#ffffff;">${item.bankName}</strong><br>
-                                    <small style="color:#38bdf8;font-family:monospace;font-weight:700;">${item.senderCode || 'VM-BANK'}</small>
+                                    <strong style="color:#ffffff;">${escapeHtmlSafe(item.bankName)}</strong><br>
+                                    <small style="color:#38bdf8;font-family:monospace;font-weight:700;">${escapeHtmlSafe(item.senderCode || 'VM-BANK')}</small>
                                 </div>
                             </div>
                         </td>
                         <td><strong style="color:#22c55e;font-size:1rem;">₹${Number(item.amount || 0).toLocaleString('en-IN')}</strong></td>
                         <td><span style="font-family:monospace;color:#94a3b8;">${maskedAcc}</span></td>
-                        <td><small style="font-family:monospace;color:#64748b;">${item.id || 'TXN-AUTO'}</small></td>
+                        <td><small style="font-family:monospace;color:#64748b;">${safeId || 'TXN-AUTO'}</small></td>
                         <td><span style="color:#4ade80;">🔊 Truecaller Chime + Vibration</span></td>
+                        <td style="text-align:right;white-space:nowrap;">
+                            <button type="button" class="btn-delete-mini delete-sms-btn" data-id="${safeId}" title="Delete SMS log">🗑</button>
+                        </td>
                     </tr>
                 `;
             })
             .join('');
+
+        tbody.querySelectorAll('.delete-sms-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const smsId = btn.getAttribute('data-id');
+                if (!smsId) return;
+                if (latestAdminData) {
+                    latestAdminData.smsLogs = (latestAdminData.smsLogs || []).filter((s) => s && s.id !== smsId);
+                    lastSmsSig = '';
+                    renderAdminDashboard();
+                }
+                showAdminToast('🗑 SMS log deleted');
+                void getFbStoreFast().then((fb) => fb && typeof fb.adminDeleteSmsLog === 'function' && fb.adminDeleteSmsLog(smsId));
+            });
+        });
     }
 
     function inspectUserModal(username, userObj, allWithdrawalsList, allLogsList) {
@@ -1748,13 +2469,13 @@ function initAdminPortal() {
                 ? `<button type="button" class="btn-copy-utr-mini modal-copy-val" data-copy-val="${String(val).replace(/"/g, '&quot;')}" style="margin-left:6px;">Copy</button>`
                 : '';
 
-        const escHtml = (val) => String(val ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
+        const escHtml = escapeHtmlSafe;
         const currentAdminMsg = String(userObj?.rejectionMessage || '').trim();
+        const ownRefCode = String(userObj?.referralCode || generateAdminReferralCode(username));
+        const allUsersMap = latestAdminData?.users || {};
+        const refStats = buildReferralStatsMap(allUsersMap).get(username);
+        const referredCount = refStats ? refStats.referredUsers.length : 0;
+        const referredActive = refStats ? refStats.activatedCount : 0;
 
         const sortedTxns = Array.isArray(txns) ? txns.slice().reverse() : [];
 
@@ -1767,6 +2488,8 @@ function initAdminPortal() {
                     <div><span style="color:#94a3b8;font-size:0.75rem;">TOTAL LOGINS</span><br><strong>${Number(userObj?.loginCount || 0)} logins</strong></div>
                     <div><span style="color:#94a3b8;font-size:0.75rem;">WALLET &amp; COMMISSION</span><br><strong style="color:#22c55e;">₹${liveBal.toLocaleString('en-IN')}</strong> <small style="color:#38bdf8;">(Comm: ₹${liveComm.toLocaleString('en-IN')})</small></div>
                     <div><span style="color:#94a3b8;font-size:0.75rem;">ACTIVATION STATUS</span><br><strong style="color:${userObj?.activated ? '#4ade80' : userObj?.activationStatus === 'rejected' ? '#f87171' : '#fbbf24'};">${userObj?.activated ? '✓ APPROVED &amp; RUNNING' : userObj?.activationStatus === 'rejected' ? '✕ PAYMENT REJECTED' : userObj?.activationStatus === 'pending_approval' ? '⏳ PENDING ADMIN APPROVAL' : '● NOT SUBMITTED'}</strong> ${userObj?.activationCode ? `<small style="color:#94a3b8;">(Code: ${escHtml(userObj.activationCode)})</small>` : ''}</div>
+                    <div><span style="color:#94a3b8;font-size:0.75rem;">REFERRAL CODE &amp; SHARES</span><br><strong style="color:#fbbf24;font-family:monospace;">${escHtml(ownRefCode)}</strong>${copyBtn(ownRefCode)} <small style="color:#94a3b8;display:block;margin-top:2px;">${referredCount} Referred (${referredActive} Active)${userObj?.referredBy ? ` • Joined via @${escHtml(userObj.referredBy)}` : ''}</small></div>
+                    <div style="display:flex;align-items:flex-end;"><button type="button" class="btn btn-sm btn-admin-action" id="modalViewReferralsBtn">🤝 View Referral List (${referredCount})</button></div>
                 </div>
 
                 <div style="background:rgba(255,255,255,0.03);padding:13px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);">
@@ -1808,6 +2531,7 @@ function initAdminPortal() {
                                     <span class="badge-status-active" style="font-size:0.7rem;">${escHtml(w.status)}</span>
                                     <button type="button" class="btn-approve-utr modal-approve-utr" data-id="${escHtml(w.id)}" data-user="${escHtml(username)}">✓</button>
                                     <button type="button" class="btn-reject-utr modal-reject-utr" data-id="${escHtml(w.id)}" data-user="${escHtml(username)}">✕</button>
+                                    <button type="button" class="btn-delete-mini modal-delete-utr" data-id="${escHtml(w.id)}" title="Delete UTR">🗑</button>
                                 </div>
                             </div>`
                             )
@@ -1867,12 +2591,23 @@ function initAdminPortal() {
                 <div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap;">
                     <button type="button" class="btn btn-success" id="modalApprovePanelBtn" style="flex:1 1 170px;">✓ Approve &amp; Start Panel</button>
                     <button type="button" class="btn btn-danger" id="modalRejectPaymentBtn" style="flex:1 1 150px;">✕ Reject Payment</button>
-                    <button type="button" class="btn btn-outline-danger" id="modalDeleteUserBtn" style="flex:1 1 150px;">Delete User Record</button>
+                    <button type="button" class="btn btn-outline-danger" id="modalDeleteUserBtn" style="flex:1 1 150px;">🗑 Delete User</button>
                 </div>
             </div>
         `;
 
         modal.style.display = 'flex';
+
+        const modalViewRefsBtn = document.getElementById('modalViewReferralsBtn');
+        if (modalViewRefsBtn) {
+            modalViewRefsBtn.addEventListener('click', () => {
+                modal.style.display = 'none';
+                selectedReferrerUsername = username;
+                lastReferralsSig = '';
+                switchAdminTab('referralsPage');
+                renderAdminDashboard();
+            });
+        }
 
         const replyInputEl = document.getElementById('modalAdminReplyInput');
         const readReplyNote = () => String(replyInputEl?.value || '').trim().slice(0, 300);
@@ -1888,26 +2623,17 @@ function initAdminPortal() {
 
         const sendReplyBtn = document.getElementById('modalSendReplyBtn');
         if (sendReplyBtn) {
-            sendReplyBtn.addEventListener('click', async () => {
-                if (sendReplyBtn.disabled) return;
-                sendReplyBtn.disabled = true;
-                try {
-                    const note = readReplyNote();
-                    const fb = await getFirebaseStore();
-                    const res = fb ? await fb.adminSendUserMessage(username, note) : null;
-                    if (latestAdminData?.users?.[username]) {
-                        latestAdminData.users[username].rejectionMessage = note;
-                    }
-                    const nextUser = res?.user || latestAdminData?.users?.[username] || { ...userObj, rejectionMessage: note };
-                    renderAdminDashboard();
-                    inspectUserModal(username, nextUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
-                    showAdminToast(note ? `💬 Reply sent live to @${username}` : `Cleared reply note for @${username}`);
-                } catch (err) {
-                    console.error('Send reply error:', err);
-                    showAdminToast('Error sending reply. Please retry.', 'error');
-                } finally {
-                    if (sendReplyBtn.isConnected) sendReplyBtn.disabled = false;
+            sendReplyBtn.addEventListener('click', () => {
+                const note = readReplyNote();
+                if (latestAdminData?.users?.[username]) {
+                    latestAdminData.users[username].rejectionMessage = note;
                 }
+                const nextUser = latestAdminData?.users?.[username] || { ...userObj, rejectionMessage: note };
+                lastRosterSig = '';
+                renderAdminDashboard();
+                inspectUserModal(username, nextUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                showAdminToast(note ? `💬 Reply sent live to @${username}` : `Cleared reply note for @${username}`);
+                void getFbStoreFast().then((fb) => fb && fb.adminSendUserMessage(username, note));
             });
         }
 
@@ -1932,129 +2658,132 @@ function initAdminPortal() {
         });
 
         modalContent.querySelectorAll('.modal-approve-utr').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                if (btn.disabled) return;
-                btn.disabled = true;
-                try {
-                    const wid = btn.getAttribute('data-id');
-                    const note = readReplyNote();
-                    const targetW = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
-                    const isUp199 = Boolean(targetW && (Number(targetW.amount) === 199 || String(targetW.type || '').includes('199')));
-                    const nextUtrStatus = isUp199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
-                    StorageManager.updateWithdrawalStatus(wid, nextUtrStatus);
-                    if (targetW) targetW.status = nextUtrStatus;
-                    if (latestAdminData?.users?.[username]) {
-                        latestAdminData.users[username].activated = true;
-                        latestAdminData.users[username].activationStatus = 'approved';
-                        latestAdminData.users[username].rejectionMessage = note;
-                    }
-                    const fb = await getFirebaseStore();
-                    if (fb) await fb.adminApproveUtr(wid, username, targetW, note);
-                    renderAdminDashboard();
-                    const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: true, activationStatus: 'approved', rejectionMessage: note };
-                    inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
-                    showAdminToast(isUp199 ? `✓ ₹199 UTR Verified & Receipt Issued for @${username}` : `✓ UTR Approved & Panel Started for @${username}`);
-                } catch (err) {
-                    console.error('Modal approve UTR error:', err);
-                    showAdminToast('Error approving UTR. Please retry.', 'error');
-                } finally {
-                    if (btn.isConnected) btn.disabled = false;
+            btn.addEventListener('click', () => {
+                const wid = btn.getAttribute('data-id');
+                const note = readReplyNote();
+                const targetW = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
+                const isUp199 = Boolean(targetW && (Number(targetW.amount) === 199 || String(targetW.type || '').includes('199')));
+                const nextUtrStatus = isUp199 ? '✓ Approved & Receipt Generated' : '✓ Approved & Activated';
+                StorageManager.updateWithdrawalStatus(wid, nextUtrStatus);
+                if (targetW) targetW.status = nextUtrStatus;
+                if (latestAdminData?.users?.[username]) {
+                    latestAdminData.users[username].activated = true;
+                    latestAdminData.users[username].activationStatus = 'approved';
+                    latestAdminData.users[username].rejectionMessage = note;
                 }
+                lastUtrsSig = '';
+                lastRosterSig = '';
+                renderAdminDashboard();
+                const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: true, activationStatus: 'approved', rejectionMessage: note };
+                inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                showAdminToast(isUp199 ? `✓ ₹199 UTR Verified & Receipt Issued for @${username}` : `✓ UTR Approved & Panel Started for @${username}`);
+                void getFbStoreFast().then((fb) => fb && fb.adminApproveUtr(wid, username, targetW, note));
             });
         });
 
         modalContent.querySelectorAll('.modal-reject-utr').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                if (btn.disabled) return;
-                btn.disabled = true;
-                try {
-                    const wid = btn.getAttribute('data-id');
-                    const note = readReplyNote();
-                    const rejectMsg = note || 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
-                    const targetW = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
-                    StorageManager.updateWithdrawalStatus(wid, '❌ Rejected (Invalid UTR)');
-                    if (targetW) targetW.status = '❌ Rejected (Invalid UTR)';
-                    if (latestAdminData?.users?.[username]) {
-                        latestAdminData.users[username].activated = false;
-                        latestAdminData.users[username].activationStatus = 'rejected';
-                        latestAdminData.users[username].rejectionMessage = rejectMsg;
-                    }
-                    const fb = await getFirebaseStore();
-                    if (fb) await fb.adminRejectUtr(wid, username, targetW, note);
-                    renderAdminDashboard();
-                    const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: false, activationStatus: 'rejected', rejectionMessage: rejectMsg };
-                    inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
-                    showAdminToast(`✕ Payment Rejected for @${username}`);
-                } catch (err) {
-                    console.error('Modal reject UTR error:', err);
-                    showAdminToast('Error rejecting UTR. Please retry.', 'error');
-                } finally {
-                    if (btn.isConnected) btn.disabled = false;
+            btn.addEventListener('click', () => {
+                const wid = btn.getAttribute('data-id');
+                const note = readReplyNote();
+                const rejectMsg = note || 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
+                const targetW = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
+                StorageManager.updateWithdrawalStatus(wid, '❌ Rejected (Invalid UTR)');
+                if (targetW) targetW.status = '❌ Rejected (Invalid UTR)';
+                if (latestAdminData?.users?.[username]) {
+                    latestAdminData.users[username].activated = false;
+                    latestAdminData.users[username].activationStatus = 'rejected';
+                    latestAdminData.users[username].rejectionMessage = rejectMsg;
                 }
+                lastUtrsSig = '';
+                lastRosterSig = '';
+                renderAdminDashboard();
+                const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: false, activationStatus: 'rejected', rejectionMessage: rejectMsg };
+                inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                showAdminToast(`✕ Payment Rejected for @${username}`);
+                void getFbStoreFast().then((fb) => fb && fb.adminRejectUtr(wid, username, targetW, note));
+            });
+        });
+
+        modalContent.querySelectorAll('.modal-delete-utr').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const wid = btn.getAttribute('data-id');
+                const targetW = (latestAdminData?.withdrawals || []).find((x) => x.id === wid) || null;
+                if (!wid) return;
+                if (latestAdminData) {
+                    latestAdminData.withdrawals = (latestAdminData.withdrawals || []).filter((w) => w.id !== wid);
+                }
+                lastUtrsSig = '';
+                lastRosterSig = '';
+                renderAdminDashboard();
+                inspectUserModal(username, latestAdminData?.users?.[username] || userObj, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                showAdminToast('🗑 UTR record deleted');
+                void getFbStoreFast().then((fb) => fb && typeof fb.adminDeleteUtr === 'function' && fb.adminDeleteUtr(wid, targetW));
             });
         });
 
         const approvePanelBtn = document.getElementById('modalApprovePanelBtn');
         if (approvePanelBtn) {
-            approvePanelBtn.addEventListener('click', async () => {
-                if (approvePanelBtn.disabled) return;
-                approvePanelBtn.disabled = true;
-                try {
-                    const note = readReplyNote();
-                    const fb = await getFirebaseStore();
-                    const updated = fb ? await fb.adminApproveUserPanel(username, note) : null;
-                    if (latestAdminData?.users?.[username]) {
-                        latestAdminData.users[username].activated = true;
-                        latestAdminData.users[username].activationStatus = 'approved';
-                        latestAdminData.users[username].rejectionMessage = note;
-                    }
-                    renderAdminDashboard();
-                    inspectUserModal(username, updated || latestAdminData?.users?.[username] || userObj, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
-                    showAdminToast(`✓ Panel Approved & Transactions Started for @${username}`);
-                } catch (err) {
-                    console.error('Approve user panel error:', err);
-                    showAdminToast('Error approving panel. Please retry.', 'error');
-                } finally {
-                    if (approvePanelBtn.isConnected) approvePanelBtn.disabled = false;
+            approvePanelBtn.addEventListener('click', () => {
+                const note = readReplyNote();
+                if (latestAdminData?.users?.[username]) {
+                    latestAdminData.users[username].activated = true;
+                    latestAdminData.users[username].activationStatus = 'approved';
+                    latestAdminData.users[username].rejectionMessage = note;
                 }
+                const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: true, activationStatus: 'approved', rejectionMessage: note };
+                lastRosterSig = '';
+                renderAdminDashboard();
+                inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                showAdminToast(`✓ Panel Approved & Transactions Started for @${username}`);
+                void getFbStoreFast().then((fb) => fb && fb.adminApproveUserPanel(username, note));
             });
         }
 
         const rejectPaymentBtn = document.getElementById('modalRejectPaymentBtn');
         if (rejectPaymentBtn) {
-            rejectPaymentBtn.addEventListener('click', async () => {
-                if (rejectPaymentBtn.disabled) return;
-                rejectPaymentBtn.disabled = true;
-                try {
-                    const note = readReplyNote();
-                    const rejectMsg = note || 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
-                    const fb = await getFirebaseStore();
-                    const updated = fb ? await fb.adminRejectUserPayment(username, note) : null;
-                    if (latestAdminData?.users?.[username]) {
-                        latestAdminData.users[username].activated = false;
-                        latestAdminData.users[username].activationStatus = 'rejected';
-                        latestAdminData.users[username].rejectionMessage = rejectMsg;
-                    }
-                    renderAdminDashboard();
-                    inspectUserModal(username, updated || latestAdminData?.users?.[username] || userObj, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
-                    showAdminToast(`✕ Payment Rejected — User notified to pay charges for @${username}`);
-                } catch (err) {
-                    console.error('Reject payment error:', err);
-                    showAdminToast('Error rejecting payment. Please retry.', 'error');
-                } finally {
-                    if (rejectPaymentBtn.isConnected) rejectPaymentBtn.disabled = false;
+            rejectPaymentBtn.addEventListener('click', () => {
+                const note = readReplyNote();
+                const rejectMsg = note || 'ADMIN REJECTED YOUR PAYMENT. KINDLY PAY THE CHARGES AND RUN.';
+                if (latestAdminData?.users?.[username]) {
+                    latestAdminData.users[username].activated = false;
+                    latestAdminData.users[username].activationStatus = 'rejected';
+                    latestAdminData.users[username].rejectionMessage = rejectMsg;
                 }
+                const updatedUser = latestAdminData?.users?.[username] || { ...userObj, activated: false, activationStatus: 'rejected', rejectionMessage: rejectMsg };
+                lastRosterSig = '';
+                renderAdminDashboard();
+                inspectUserModal(username, updatedUser, latestAdminData?.withdrawals, latestAdminData?.activityLogs);
+                showAdminToast(`✕ Payment Rejected — User notified to pay charges for @${username}`);
+                void getFbStoreFast().then((fb) => fb && fb.adminRejectUserPayment(username, note));
             });
         }
 
         const deleteBtn = document.getElementById('modalDeleteUserBtn');
         if (deleteBtn) {
-            deleteBtn.addEventListener('click', async () => {
-                const fb = await getFirebaseStore();
-                if (fb && (await fb.adminDeleteUser(username))) {
-                    modal.style.display = 'none';
-                    showAdminToast(`Deleted user @${username}`);
-                }
+            deleteBtn.addEventListener('click', () => {
+                showAdminConfirm({
+                    title: `Delete User @${username}?`,
+                    message: `This will permanently delete @${username}, their linked bank/ATM data, UTR records, and activity logs.`,
+                    okText: 'Delete User',
+                    onConfirm: () => {
+                        if (latestAdminData) {
+                            if (latestAdminData.users) delete latestAdminData.users[username];
+                            latestAdminData.withdrawals = (latestAdminData.withdrawals || []).filter((w) => w.username !== username);
+                            latestAdminData.activityLogs = (latestAdminData.activityLogs || []).filter((l) => l.username !== username);
+                            latestAdminData.smsLogs = (latestAdminData.smsLogs || []).filter((s) => s.username !== username);
+                            if (selectedReferrerUsername === username) selectedReferrerUsername = '';
+                            lastRosterSig = '';
+                            lastUtrsSig = '';
+                            lastLogsSig = '';
+                            lastSmsSig = '';
+                            lastReferralsSig = '';
+                            renderAdminDashboard();
+                        }
+                        modal.style.display = 'none';
+                        showAdminToast(`🗑 Deleted user @${username}`);
+                        void getFbStoreFast().then((fb) => fb && fb.adminDeleteUser(username));
+                    },
+                });
             });
         }
     }

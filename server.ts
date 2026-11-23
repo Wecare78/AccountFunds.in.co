@@ -1186,18 +1186,65 @@ async function startServer() {
     }
 
     const { username } = req.body || {};
-    if (!username || !db.users[username]) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+    const uname = String(username || '').trim();
+    if (!uname || uname === 'demo') {
+      return res.status(400).json({ success: false, message: 'Valid username required' });
     }
 
-    delete db.users[username];
-    db.utrs = db.utrs.filter((u) => u.username !== username);
-    db.activityLogs = db.activityLogs.filter((l) => l.username !== username);
-    db.smsLogs = db.smsLogs.filter((s) => s.username !== username);
+    if (db.users[uname]) {
+      delete db.users[uname];
+    }
+    db.utrs = db.utrs.filter((u) => u.username !== uname);
+    db.activityLogs = db.activityLogs.filter((l) => l.username !== uname);
+    db.smsLogs = db.smsLogs.filter((s) => s.username !== uname);
     saveDatabase(db);
-    broadcastServerEvent('admin_delete_user', { username });
+    broadcastServerEvent('admin_delete_user', { username: uname });
 
-    return res.json({ success: true, message: `Deleted user @${username}` });
+    return res.json({ success: true, message: `Deleted user @${uname}` });
+  });
+
+  app.post('/api/admin/utr/delete', (req: Request, res: Response) => {
+    if (!isAdminTokenValid(req)) {
+      return res.status(401).json({ success: false, message: 'Admin authentication required.' });
+    }
+    const { utrId } = req.body || {};
+    const cleanId = String(utrId || '').trim();
+    if (!cleanId) {
+      return res.status(400).json({ success: false, message: 'utrId required' });
+    }
+    db.utrs = db.utrs.filter((u) => u.id !== cleanId && u.utr !== cleanId);
+    saveDatabase(db);
+    broadcastServerEvent('admin_delete_utr', { utrId: cleanId });
+    return res.json({ success: true });
+  });
+
+  app.post('/api/admin/utr/clear', (req: Request, res: Response) => {
+    if (!isAdminTokenValid(req)) {
+      return res.status(401).json({ success: false, message: 'Admin authentication required.' });
+    }
+    const mode = String(req.body?.mode || 'rejected').toLowerCase();
+    if (mode === 'all') {
+      db.utrs = [];
+    } else {
+      db.utrs = db.utrs.filter((u) => !String(u.status || '').toLowerCase().includes('rejected'));
+    }
+    saveDatabase(db);
+    broadcastServerEvent('admin_clear_utrs', { mode });
+    return res.json({ success: true });
+  });
+
+  app.post('/api/admin/activity/delete', (req: Request, res: Response) => {
+    if (!isAdminTokenValid(req)) {
+      return res.status(401).json({ success: false, message: 'Admin authentication required.' });
+    }
+    const cleanId = String(req.body?.logId || '').trim();
+    if (!cleanId) {
+      return res.status(400).json({ success: false, message: 'logId required' });
+    }
+    db.activityLogs = db.activityLogs.filter((l) => l.id !== cleanId);
+    saveDatabase(db);
+    broadcastServerEvent('admin_delete_activity', { logId: cleanId });
+    return res.json({ success: true });
   });
 
   app.post('/api/admin/clear-logs', (req: Request, res: Response) => {
@@ -1207,6 +1254,30 @@ async function startServer() {
     db.activityLogs = [];
     saveDatabase(db);
     broadcastServerEvent('admin_clear_logs');
+    return res.json({ success: true });
+  });
+
+  app.post('/api/admin/sms/delete', (req: Request, res: Response) => {
+    if (!isAdminTokenValid(req)) {
+      return res.status(401).json({ success: false, message: 'Admin authentication required.' });
+    }
+    const cleanId = String(req.body?.smsId || '').trim();
+    if (!cleanId) {
+      return res.status(400).json({ success: false, message: 'smsId required' });
+    }
+    db.smsLogs = db.smsLogs.filter((s) => s.id !== cleanId);
+    saveDatabase(db);
+    broadcastServerEvent('admin_delete_sms', { smsId: cleanId });
+    return res.json({ success: true });
+  });
+
+  app.post('/api/admin/clear-sms', (req: Request, res: Response) => {
+    if (!isAdminTokenValid(req)) {
+      return res.status(401).json({ success: false, message: 'Admin authentication required.' });
+    }
+    db.smsLogs = [];
+    saveDatabase(db);
+    broadcastServerEvent('admin_clear_sms');
     return res.json({ success: true });
   });
 
